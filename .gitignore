@@ -1,17 +1,19 @@
-# Kernel build artifacts
+# Kernel build
 *.o
 *.ko
 *.mod
 *.mod.c
-*.mod.o
-*.order
 *.symvers
 modules.order
-Module.symvers
-
-# build folders
 build/
 
-# temp files
-*.tmp
+# Qt / CMake
+gui/build/
+CMakeCache.txt
+CMakeFiles/
+
+# binaries
+traffic_gui
+
+# temp
 *.log

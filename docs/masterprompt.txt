@@ -1,0 +1,321 @@
+# KERNEL TRAFFIC ANALYZER — MASTER CONTINUATION PROMPT
+# Paste this into any new chat to resume immediately.
+
+---
+
+## PROJECT IDENTITY
+
+**Name:** Linux Process-Level Network Observability System
+**Author:** Anil Reddy
+**Location:** ~/Documents/Projects/kernel_traffic_analyzer/
+**System:** Ubuntu 22.04, Kernel 6.8.0-106-generic, Lenovo laptop
+**Language:** C (kernel module) + C++/Qt6 (GUI)
+
+---
+
+## PROJECT STRUCTURE
+
+```
+kernel_traffic_analyzer/
+├── kernel_module/          ← active working directory
+│   ├── Makefile
+│   ├── include/
+│   │   ├── traffic_analyzer.h   ← master header
+│   │   ├── cache.h
+│   │   ├── inode_cache.h
+│   │   ├── sock_cache.h
+│   │   ├── flow_cache.h
+│   │   ├── resolver.h
+│   │   ├── exe_resolver.h
+│   │   ├── dns_map.h
+│   │   ├── dns_parser.h
+│   │   └── route_store.h
+│   └── src/
+│       ├── module_main.c
+│       ├── netfilter_hook.c
+│       ├── packet_parser.c
+│       ├── resolver.c
+│       ├── stats.c
+│       ├── proc_interface.c
+│       ├── cache.c
+│       ├── inode_cache.c
+│       ├── sock_cache.c
+│       ├── flow_cache.c
+│       ├── exe_resolver.c
+│       ├── dns_map.c
+│       ├── dns_parser.c
+│       └── route_store.c
+└── gui/                    ← Qt6 GUI (partially built, needs update)
+    ├── CMakeLists.txt
+    ├── main.cpp
+    ├── core/
+    │   ├── TrafficEntry.h
+    │   ├── ProcReader.h / .cpp
+    │   ├── TrafficModel.h / .cpp
+    └── ui/
+        ├── MainWindow.h / .cpp
+```
+
+---
+
+## WHAT IS BUILT AND WORKING
+
+### ✅ PHASE 1 — Kernel correctness
+- `skb_to_full_sk()` replacing raw `skb->sk`
+- `sock_i_uid()` for kernel-authoritative UID
+- 4-layer resolution pipeline: sock cache → inode cache → flow cache → async workqueue
+- `put_pid()` + RCU lock fixes (original bugs fixed)
+- PID liveness check before attribution
+- All memory leaks fixed on rmmod
+
+### ✅ PHASE 2 — Connection model
+- Canonical 5-tuple key (lower IP always src — forward+reverse merge)
+- Full TCP state machine: SYN_SENT → SYN_RECV → ESTABLISHED → FIN_WAIT → CLOSED
+- Live bandwidth rate (1-second sliding window per connection)
+- Per-process aggregation (`/proc/traffic_analyzer_procs`)
+- DNS noise flagged and separated (`/proc/traffic_analyzer_dns`)
+
+### ✅ PHASE 3 — Process intelligence
+- Full executable path via `task->mm->exe_file` + `d_path()` (async, workqueue)
+- Anomaly detection: CONN_BURST, PORT_SCAN, HIGH_CONNS, SYN_FLOOD, HIGH_BW
+- Connection velocity tracker per process (new conns/sec, unique ports/sec)
+- Top-5 connections per process by bytes
+- Protocol distribution % (TCP_PCT, UDP_PCT)
+- `/proc/traffic_analyzer_anomalies`
+
+### ✅ PHASE 4 — DNS resolution (IP → domain)
+- Full RFC 1035 DNS wire-format parser in kernel
+- Intercepts DNS response packets from port 53
+- Extracts A records, stores IP→domain in hash table with TTL
+- `domain[]` field in every `traffic_entry`
+- `/proc/traffic_analyzer_dns_map`
+- DOMAIN column in connections view
+
+### ✅ PHASE 5 — Network path (route store kernel side)
+- `route_store.c`: hash table keyed by remote IP
+- Stores up to 32 hops per IP: IP, hostname, RTT, city, country, lat/lon, ASN, org
+- Status machine: PENDING → RUNNING → DONE / FAILED
+- Auto-requests traceroute when TCP connection reaches ESTABLISHED
+- Skips private/loopback/multicast IPs (is_routable() filter)
+- `/proc/traffic_analyzer_routes` (R/W — daemon writes hop data here)
+- `/proc/traffic_analyzer_routes_pending` (R — daemon polls for work)
+- Write protocol for daemon: DEST / STATUS / HOP lines
+
+---
+
+## PROC FILE CONTRACT (FINAL — DO NOT CHANGE)
+
+### `/proc/traffic_analyzer` — connections
+```
+PID|UID|PROCESS|RESOLVED|STATE|DNS|PROTO|
+SRC_IP|DEST_IP|SRC_PORT|DEST_PORT|DOMAIN|
+OUT_BYTES|IN_BYTES|OUT_PKTS|IN_PKTS|
+RATE_OUT_BPS|RATE_IN_BPS|
+FIRST_SEEN|LAST_SEEN|DURATION|CLOSED_AT
+```
+Column indices (0-based): 0=PID 1=UID 2=PROCESS 3=RESOLVED 4=STATE
+5=DNS 6=PROTO 7=SRC_IP 8=DEST_IP 9=SRC_PORT 10=DEST_PORT 11=DOMAIN
+12=OUT_BYTES 13=IN_BYTES 14=OUT_PKTS 15=IN_PKTS
+16=RATE_OUT_BPS 17=RATE_IN_BPS
+18=FIRST_SEEN 19=LAST_SEEN 20=DURATION 21=CLOSED_AT
+
+### `/proc/traffic_analyzer_procs` — per-process
+```
+PID|UID|PROCESS|EXE|
+TCP_CONNS|UDP_CONNS|TOTAL_CONNS|SYN_PENDING|
+OUT_BYTES|IN_BYTES|OUT_PKTS|IN_PKTS|
+RATE_OUT_BPS|RATE_IN_BPS|
+TCP_PCT|UDP_PCT|ANOMALY|
+TOP1|TOP2|TOP3|TOP4|TOP5
+```
+TOP format: `domain_or_ip:port/proto/bytes`
+
+### `/proc/traffic_analyzer_dns` — DNS flows
+```
+PID|UID|PROCESS|SRC_IP|DEST_IP|SRC_PORT|DEST_PORT|
+OUT_BYTES|IN_BYTES|OUT_PKTS|IN_PKTS|LAST_SEEN_AGO
+```
+
+### `/proc/traffic_analyzer_anomalies` — anomalies only
+```
+PID|UID|PROCESS|EXE|ANOMALY|
+NEW_CONNS_LAST_SEC|UNIQUE_PORTS_LAST_SEC|
+TOTAL_CONNS|SYN_PENDING|RATE_OUT_BPS|RATE_IN_BPS
+```
+
+### `/proc/traffic_analyzer_dns_map` — IP→domain map
+```
+DOMAIN|IP|TTL_REMAINING|QUERIED_BY_PID|QUERIED_BY_COMM|FIRST_SEEN|LAST_SEEN
+```
+
+### `/proc/traffic_analyzer_routes` — route hops (READ)
+```
+DEST_IP|DOMAIN|STATUS|TOTAL_HOPS|HOP_N|HOP_IP|HOST|RTT_MS|
+CITY|COUNTRY|CC|LAT_E6|LON_E6|ASN|ORG
+```
+
+### `/proc/traffic_analyzer_routes_pending` — daemon work queue (READ)
+```
+<ip> <domain_or_dash>      (one line per IP needing traceroute)
+```
+
+### Write commands (all proc files accept these):
+```
+echo "clear"           → wipe all traffic stats
+echo "clear_dns"       → wipe DNS flow entries
+echo "clear_closed"    → wipe CLOSED connection entries
+echo "clear_dns_map"   → wipe IP→domain mappings
+echo "clear_routes"    → wipe all route data
+DEST/STATUS/HOP lines  → daemon submits traceroute results
+```
+
+---
+
+## CURRENT MODULE VERSION
+
+```
+MODULE_VERSION("6.0")
+dmesg shows: "[traffic_analyzer] Module loaded (Phase 5)"
+```
+
+---
+
+## CONFIRMED WORKING OUTPUT (Phase 4 verified live)
+
+```bash
+$ cat /proc/traffic_analyzer_dns_map | column -t -s '|'
+DOMAIN              IP               TTL_REMAINING  ...
+github.com          20.207.73.82     15
+google.com          142.250.194.238  9
+www3.l.google.com   142.250.206.110  344
+```
+
+---
+
+## KERNEL CODING RULES (learned from bugs fixed)
+
+1. `DEFINE_HASHTABLE` never with `static` keyword — causes parse error
+2. `DECLARE_HASHTABLE` in headers causes multiple-definition — use `extern struct hlist_head name[1 << BITS]`
+3. Stack frames must stay under 1024 bytes — large arrays go module-level static
+4. `get_mm_exe_file()` removed in kernel 6.7 — use `rcu_dereference(mm->exe_file)` + `get_file()`
+5. `fput()` needs `<linux/file.h>` not just `<linux/fs.h>`
+6. `ip_hdrlen()` needs `<net/ip.h>` not just `<linux/ip.h>`
+7. `IPPROTO_TCP/UDP` need `<linux/in.h>` in every .c that uses them
+8. `struct hlist_node` needs `<linux/list.h>` in every header that embeds it
+9. Always `put_pid()` after every `find_get_pid()` — leaked one per packet before
+10. `pid_task()` requires `rcu_read_lock()` — use-after-free without it
+11. `spin_lock_bh()` not `spin_lock()` in code called from softirq context
+12. `for_each_process()` requires `rcu_read_lock()`
+13. `files->file_lock` spinlock before accessing `fdtable`
+
+---
+
+## REMAINING ROADMAP
+
+### ⬜ PHASE 5 — Userspace daemon (ta_route_daemon.py)
+**Next immediate task.**
+
+Build the Python daemon that bridges kernel ↔ traceroute ↔ GeoIP:
+
+```python
+# ta_route_daemon.py — what it does:
+# 1. Poll /proc/traffic_analyzer_routes_pending every 2 seconds
+# 2. For each IP listed:
+#    a. Run: traceroute -n -q 1 -w 1 <ip>
+#    b. For each hop IP: query MaxMind GeoLite2 → city/country/lat/lon/ASN
+#    c. Write results to /proc/traffic_analyzer_routes:
+#       DEST <ip>
+#       STATUS DONE
+#       HOP 1 <ip> <rtt_us> <host> <city> <country> <cc> <lat_e6> <lon_e6> <asn> <org>
+#       ...
+# 3. Requires: pip install geoip2
+# 4. Requires: /usr/share/GeoIP/GeoLite2-City.mmdb
+#              /usr/share/GeoIP/GeoLite2-ASN.mmdb
+#              (free from maxmind.com with account)
+```
+
+### ⬜ PHASE 6 — System upgrade
+Replace `/proc` with **netlink socket** for async kernel→userspace communication.
+Replace netfilter hooks with **eBPF** (optional, advanced).
+
+### ⬜ GUI — Qt6 complete rewrite
+The existing GUI reads Phase 1 format — completely outdated.
+
+**GUI architecture (final plan):**
+```
+MainWindow
+  ├── ConnectionsTab     reads /proc/traffic_analyzer
+  │     QTableView with: PID, Process, Domain, Proto,
+  │                      Src→Dest, Bytes, Rate, State
+  │     Click row → opens ProcessDetailWindow
+  │
+  └── ProcessListTab     reads /proc/traffic_analyzer_procs
+        QTableView with: PID, EXE, Connections, Rate, Anomaly
+
+ProcessDetailWindow (opens on process click)
+  ├── ConnectionsTab     filtered by PID
+  ├── DNSTab             reads /proc/traffic_analyzer_dns_map
+  │                      filtered by PID
+  ├── AnomalyTab         reads /proc/traffic_analyzer_anomalies
+  └── RouteMapTab        reads /proc/traffic_analyzer_routes
+        QtWebEngine widget
+        Leaflet.js map (OpenStreetMap, free, no API key)
+        Shows: you → ISP → backbone → destination
+        Markers at each hop with city/country/latency
+        Polylines between hops
+        Popup on click: ASN, org, RTT
+```
+
+**GUI files to rewrite:**
+- `TrafficEntry.h` — add all Phase 3-5 fields
+- `ProcReader.h/.cpp` — read all 7 proc files, correct column indices
+- `TrafficModel.h/.cpp` — new column layout
+- `MainWindow.h/.cpp` — two tabs, click handler
+- New: `ProcessDetailWindow.h/.cpp`
+- New: `RouteMapWindow.h/.cpp` (QtWebEngine + Leaflet)
+- New: `ProcRouteReader.h/.cpp`
+
+---
+
+## HOW TO RESUME
+
+```bash
+# Load current module
+cd ~/Documents/Projects/kernel_traffic_analyzer/kernel_module
+sudo rmmod traffic_analyzer 2>/dev/null
+make clean && make
+sudo insmod traffic_analyzer.ko
+dmesg | tail -5
+# expect: Module loaded (Phase 5)
+
+# Verify all 7 proc files
+ls /proc/traffic_analyzer*
+
+# Test
+curl https://google.com > /dev/null 2>&1
+cat /proc/traffic_analyzer | awk -F'|' '{print $3,$7,$9,$11,$12}' | column -t
+cat /proc/traffic_analyzer_dns_map | column -t -s '|'
+cat /proc/traffic_analyzer_routes_pending
+```
+
+---
+
+## NEXT STEPS IN ORDER
+
+1. Build `ta_route_daemon.py` (Phase 5 userspace)
+2. Test full pipeline: kernel → daemon → routes proc file
+3. Build Phase 6 (netlink) OR skip to GUI
+4. Rewrite GUI completely against final proc contract
+5. Add Leaflet map to GUI for route visualization
+
+---
+
+## IMPORTANT NOTES FOR CONTINUATION
+
+- Always read ALL relevant source files before writing any code
+- Never change the proc file format — GUI is being built against it
+- All kernel allocations in softirq context use GFP_ATOMIC
+- Slow operations (d_path, scan_all_tasks) go in the workqueue (ta_resolver)
+- The route daemon writes in the DEST/STATUS/HOP protocol — do not change it
+- GeoIP lat/lon stored as integer × 1,000,000 (e.g. 22694000 = 22.694°)
+- The kernel module version is 6.0, built for kernel 6.8.0-106-generic

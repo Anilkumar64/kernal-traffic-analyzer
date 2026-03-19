@@ -1,0 +1,196 @@
+# KERNEL TRAFFIC ANALYZER — MASTER CONTINUATION PROMPT
+# Paste this into any new chat to resume immediately.
+
+---
+
+## PROJECT IDENTITY
+
+**Name:** Linux Process-Level Network Observability System
+**Author:** Anil Reddy
+**Location:** ~/Documents/Projects/kernel_traffic_analyzer/
+**System:** Ubuntu 22.04, Kernel 6.8.0-106-generic, Lenovo laptop
+**Language:** Kernel module in C, GUI in C++/Qt6, Route daemon in Python3
+
+---
+
+## WHAT IS FULLY BUILT AND WORKING
+
+### Kernel Module (Phase 1–5) — 100% COMPLETE ✅
+- Module version: 6.0, loads as `[traffic_analyzer] Module loaded (Phase 5)`
+- `skb_to_full_sk()`, `sock_i_uid()`, 4-layer resolution pipeline
+- Full TCP state machine: SYN_SENT → ESTABLISHED → FIN_WAIT → CLOSED
+- Live bandwidth rate (1-second sliding window per connection)
+- Per-process aggregation with top-5 connections
+- DNS noise flagged and separated
+- Full executable path via `task->mm->exe_file` + `d_path()` async workqueue
+- Anomaly detection: CONN_BURST, PORT_SCAN, HIGH_CONNS, SYN_FLOOD, HIGH_BW
+- Full RFC 1035 DNS wire-format parser — IP→domain in kernel hash table
+- Route store: hash table keyed by remote IP, stores 32 hops per IP
+- Auto-requests traceroute when TCP reaches ESTABLISHED
+- Skips private/loopback/multicast IPs (is_routable() filter)
+- All 7 /proc files working and verified
+
+### /proc File Contract (NEVER CHANGE)
+```
+/proc/traffic_analyzer          — 22 columns, connections
+/proc/traffic_analyzer_procs    — 22 columns, per-process
+/proc/traffic_analyzer_dns      — DNS flows
+/proc/traffic_analyzer_anomalies
+/proc/traffic_analyzer_dns_map  — IP→domain map
+/proc/traffic_analyzer_routes   — route hops (R/W)
+/proc/traffic_analyzer_routes_pending — daemon work queue
+```
+
+### Route Daemon (ta_route_daemon.py) — WORKING ✅
+- Location: ~/Documents/Projects/kernel_traffic_analyzer/ta_route_daemon.py
+- Polls /proc/traffic_analyzer_routes_pending every 2 seconds
+- Runs traceroute, enriches with MaxMind GeoLite2 (City + ASN)
+- GeoIP DBs installed at /usr/share/GeoIP/GeoLite2-City.mmdb and GeoLite2-ASN.mmdb
+- Writes DEST/STATUS/HOP protocol back to kernel
+- Run with: sudo python3 ta_route_daemon.py --verbose
+- NOTE: Currently on mobile hotspot — traceroute blocked after hop 1 (ICMP blocked by carrier NAT). Need real WiFi for full route data.
+
+### Qt6 GUI — BUILT AND RUNNING ✅
+- Location: ~/Documents/Projects/kernel_traffic_analyzer/gui/
+- Build: cd gui/build && cmake .. && make -j$(nproc)
+- Run: sudo ./kernel_traffic_analyzer
+- Font: Ubuntu Mono (installed on system)
+- Theme: Dark (#0d1117 base, #161b22 surface — GitHub dark style)
+
+### GUI File Structure
+```
+gui/
+├── CMakeLists.txt          — Qt6 Core+Gui+Widgets (NO WebEngine — broken on this Ubuntu)
+├── main.cpp
+├── core/
+│   ├── TrafficEntry.h      — 22 cols from /proc/traffic_analyzer
+│   ├── ProcEntry.h         — 22 cols + TopConn parser
+│   ├── RouteEntry.h        — hop struct, lat/lon from LAT_E6, RTT color
+│   ├── DnsEntry.h
+│   ├── AnomalyEntry.h
+│   ├── ProcReader.h/.cpp   — reads all 7 /proc files, correct column indices
+│   ├── TrafficModel.h/.cpp — 11-col QAbstractTableModel
+│   └── ProcModel.h/.cpp    — 10-col QAbstractTableModel
+└── ui/
+    ├── Style.h             — Ubuntu Mono font, dark theme, all color helpers
+    ├── Sidebar.h/.cpp      — collapsible sidebar (◀/▶ toggle), anomaly badge
+    ├── MainWindow.h/.cpp   — sidebar + QStackedWidget + 1s QTimer refresh
+    ├── ConnectionsTab.h/.cpp  — live table + filter + inline detail panel
+    ├── ProcessesTab.h/.cpp    — process list, anomaly rows red
+    ├── DnsTab.h/.cpp          — real table: domain, IP, TTL, queried by
+    ├── AnomalyTab.h/.cpp      — real table, shows "No anomalies" when clean
+    └── RouteMapWidget.h/.cpp  — QGraphicsView world map, continent polygons
+```
+
+### GUI Tabs Working
+1. **Connections** ✅ — live table, 17 connections shown, ESTABLISHED/UDP_ACTIVE states, rates, filter by state/process/domain, click row shows detail panel with stat cards
+2. **Processes** ✅ — 3 processes (brave, telegram, code), rates, top dest, anomaly column
+3. **Route Map** ✅ — world map with continent polygons renders, hop dots plot when geo data available, segfault fixed (TravelDot double-delete bug fixed)
+4. **DNS Map** ✅ — 55 entries showing (github, google, pypi, maxmind, cloudfront etc)
+5. **Anomalies** ✅ — shows "No anomalies detected" correctly when system clean
+
+---
+
+## KNOWN BUGS TO FIX
+
+1. **Route map hop plotting** — when on mobile hotspot, all traceroute hops are `*` (ICMP blocked by carrier NAT). Only hop 1 (gateway 172.20.10.1) gets plotted. Need real WiFi to test full route visualization. NOT a code bug — network limitation.
+
+2. **Route map live animation** — the animated travelling dot exists in code (TravelDot class) but only works when route has real geo coordinates. Currently all connections are to local/private IPs (127.0.0.53, 172.20.10.x) which are skipped by is_routable() in kernel. Need external TCP connections + real WiFi for animation to work.
+
+3. **Sidebar collapse** — the ◀ button exists and animates width, but section labels (MONITOR, INTELLIGENCE) may not hide cleanly in all cases. Needs testing after collapse.
+
+4. **Map tile style** — currently using hand-drawn continent polygons (no real map tiles). Decision: use CartoDB Dark Matter tiles. BLOCKED because QtWebEngine is broken on this Ubuntu 22.04 install (missing qwebengine_convert_dict binary — known Ubuntu packaging bug). Need alternative approach.
+
+---
+
+## FEATURES DISCUSSED BUT NOT YET BUILT
+
+### Map Features (HIGH PRIORITY — next to build)
+- **Real map tiles** — CartoDB Dark Matter style. Solution: use Qt6 QNetworkAccessManager to fetch OpenStreetMap/CartoDB tiles directly as QPixmap and render on QGraphicsScene. No WebEngine needed. Tile URL: `https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png`
+- **Live animated packets** — each active connection gets unique color, small dots animate along arc continuously, speed proportional to real bandwidth (fast connection = fast dot)
+- **Haversine distance labels** — show km distance between each hop (e.g. "Mumbai → Singapore: 4,183 km")
+- **Total path distance** — show total km from your machine to destination
+- **Hop popup on click** — city, ASN, org, RTT, distance from previous hop
+- **Multiple simultaneous paths** — all active connections animated at once, color-coded
+
+### Intelligence Features (MEDIUM PRIORITY)
+- **BGP hijack detector** — learns normal route to each domain over 7 days, alerts if path suddenly goes through unexpected country
+- **Data cost tracker** — configure ISP rate (₹/GB), shows live cost per process. Very useful in India on mobile data.
+- **Country risk scoring** — flag hops through high-surveillance jurisdictions
+- **Latency heatmap** — color world map by average RTT to each region
+- **Data sovereignty tracker** — "Brave sent 12MB through US servers today" — already partially in sidebar
+
+### Advanced Features (LOWER PRIORITY)
+- **Historical route replay** — record all routes, play back "where did my data go today"
+- **Side-by-side route comparison** — two connections on same map
+- **Export route report as PDF**
+- **Process-level data sovereignty report**
+- **Suspicious path alerting** — baseline learning + deviation alerts
+
+---
+
+## TECH DECISIONS MADE
+
+- **No QtWebEngine** — broken on Ubuntu 22.04 (6.2.4+dfsg-6ubuntu1), missing binary
+- **Map approach** — use QNetworkAccessManager + QGraphicsScene tile rendering instead
+- **Font** — Ubuntu Mono (confirmed installed: /usr/share/fonts/truetype/ubuntu/UbuntuMono-B.ttf)
+- **Map tile style chosen** — CartoDB Dark Matter (dark street, shows borders+cities clearly, dark bg makes colored arcs pop)
+- **No Electron/React** — pure Qt6 desktop, Anil is C++ developer
+- **Dijkstra not applicable** — we're visualizing the ACTUAL path packets took (from traceroute), not computing shortest path. Haversine formula for geographic distances between hops.
+
+---
+
+## HOW TO RUN
+
+```bash
+# Load kernel module
+cd ~/Documents/Projects/kernel_traffic_analyzer/kernel_module
+sudo insmod traffic_analyzer.ko
+dmesg | tail -3
+
+# Run route daemon (in separate terminal)
+cd ~/Documents/Projects/kernel_traffic_analyzer
+sudo python3 ta_route_daemon.py --verbose
+
+# Generate external traffic (connect to real WiFi first, not hotspot)
+curl https://github.com > /dev/null &
+curl https://google.com > /dev/null &
+
+# Run GUI
+cd ~/Documents/Projects/kernel_traffic_analyzer/gui/build
+sudo ./kernel_traffic_analyzer
+
+# Verify proc files
+cat /proc/traffic_analyzer_dns_map | head -5
+cat /proc/traffic_analyzer_routes_pending
+cat /proc/traffic_analyzer_routes | head -10
+```
+
+---
+
+## NEXT IMMEDIATE TASK
+
+**Rewrite RouteMapWidget with real tile map + live packet animation.**
+
+Replace the current hand-drawn polygon map with:
+1. QNetworkAccessManager fetching CartoDB Dark Matter tiles
+2. Slippy map tile system (XYZ tiles, zoom levels)
+3. Proper geo→pixel projection using Mercator
+4. Each active connection animated with unique color
+5. Dots speed = proportional to bandwidth
+6. Haversine distance labels on arcs
+7. Zoom/pan working properly
+8. Hop click popup
+
+Files to rewrite: `ui/RouteMapWidget.h` and `ui/RouteMapWidget.cpp`
+Add to CMakeLists: `Qt6::Network` component
+
+---
+
+## KERNEL CODING RULES (for reference)
+1. DEFINE_HASHTABLE never with static keyword
+2. Stack frames under 1024 bytes
+3. get_mm_exe_file() removed in 6.7 — use rcu_dereference(mm->exe_file)
+4. spin_lock_bh() not spin_lock() in softirq context
+5. GFP_ATOMIC for all kernel allocations in softirq context
+6. Always put_pid() after find_get_pid()

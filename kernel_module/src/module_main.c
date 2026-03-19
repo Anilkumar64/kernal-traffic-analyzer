@@ -1,31 +1,89 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include "../include/traffic_analyzer.h"
+#include "../include/cache.h"
+#include "../include/inode_cache.h"
+#include "../include/sock_cache.h"
+#include "../include/flow_cache.h"
+#include "../include/resolver.h"
+#include "../include/exe_resolver.h"
+#include "../include/dns_map.h"
+#include "../include/route_store.h"
+#include "../include/netlink_comm.h" /* PHASE 6 */
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Anil Reddy");
-MODULE_DESCRIPTION("Kernel Traffic Analyzer");
-MODULE_VERSION("1.0");
+MODULE_DESCRIPTION("Kernel Traffic Analyzer — Phase 6");
+MODULE_VERSION("7.0");
 
-/* Module Init */
 static int __init traffic_analyzer_init(void)
 {
-    printk(KERN_INFO "[traffic_analyzer] module loaded\n");
+    int ret;
 
-    proc_init();
-    netfilter_hook_init();
+    printk(KERN_INFO "[traffic_analyzer] Initializing module v7.0\n");
 
+    /* Netlink FIRST — stats.c sends events during net_hook_init */
+    ret = ta_netlink_init();
+    if (ret)
+        return ret;
+
+    ret = proc_fs_init();
+    if (ret)
+    {
+        ta_netlink_cleanup();
+        return ret;
+    }
+
+    cache_init();
+    inode_cache_init();
+    sock_cache_init();
+    flow_cache_init();
+    exe_cache_init();
+    dns_map_init();
+    route_store_init();
+    resolver_init();
+
+    ret = net_hook_init();
+    if (ret)
+    {
+        printk(KERN_ERR "[TA] net_hook_init failed: %d\n", ret);
+        resolver_cleanup();
+        route_store_cleanup();
+        dns_map_cleanup();
+        exe_cache_cleanup();
+        flow_cache_cleanup();
+        sock_cache_cleanup();
+        inode_cache_cleanup();
+        cache_cleanup();
+        proc_fs_cleanup();
+        ta_netlink_cleanup();
+        return ret;
+    }
+
+    printk(KERN_INFO "[traffic_analyzer] Module loaded (Phase 6 — netlink ready)\n");
+    printk(KERN_INFO "[traffic_analyzer] Userspace: socket(AF_NETLINK, SOCK_RAW, %d)\n",
+           TA_NETLINK_PROTO);
     return 0;
 }
 
-/* Module Exit */
 static void __exit traffic_analyzer_exit(void)
 {
-    netfilter_hook_exit();
-    proc_cleanup();
-    stats_cleanup(); /* free traffic entries */
+    printk(KERN_INFO "[traffic_analyzer] Cleaning up\n");
 
-    printk(KERN_INFO "[traffic_analyzer] module unloaded\n");
+    net_hook_cleanup();
+    resolver_cleanup();
+    stats_cleanup();
+    route_store_cleanup();
+    dns_map_cleanup();
+    exe_cache_cleanup();
+    flow_cache_cleanup();
+    sock_cache_cleanup();
+    inode_cache_cleanup();
+    cache_cleanup();
+    proc_fs_cleanup();
+    ta_netlink_cleanup(); /* netlink LAST */
+
+    printk(KERN_INFO "[traffic_analyzer] Module unloaded\n");
 }
 
 module_init(traffic_analyzer_init);
