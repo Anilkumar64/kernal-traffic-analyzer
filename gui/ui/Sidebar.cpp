@@ -35,7 +35,7 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    // Logo
+    // ── Logo ─────────────────────────────────────────────────────
     m_logoWidget = new QWidget(this);
     m_logoWidget->setObjectName("SidebarLogo");
     m_logoWidget->setFixedHeight(64);
@@ -72,34 +72,54 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     ll->addWidget(m_btnCollapse);
     layout->addWidget(m_logoWidget);
 
-    auto mkDiv = [&]() {
+    auto mkDiv = [&]()
+    {
         auto *f = new QFrame(this);
         f->setFrameShape(QFrame::HLine);
         f->setStyleSheet("background:#30363d;max-height:1px;");
         return f;
     };
-    auto mkSec = [&](const QString &t) {
+    auto mkSec = [&](const QString &t)
+    {
         auto *l = new QLabel(t, this);
         l->setObjectName("SectionTitle");
+        l->setStyleSheet(
+            "color:#484f58;font-size:9px;font-weight:700;"
+            "letter-spacing:1.5px;padding:8px 14px 4px 14px;");
         return l;
     };
 
+    // ── MONITOR section ───────────────────────────────────────────
     layout->addWidget(mkDiv());
     layout->addWidget(mkSec("MONITOR"));
 
     m_btnConnections = makeNavButton("Connections", "⬡", PAGE_CONNECTIONS);
-    m_btnProcesses   = makeNavButton("Processes",   "⬡", PAGE_PROCESSES);
-    m_btnRouteMap    = makeNavButton("Route Map",   "⬡", PAGE_ROUTEMAP);
+    m_btnProcesses = makeNavButton("Processes", "⬡", PAGE_PROCESSES);
+    m_btnRouteMap = makeNavButton("Route Map", "⬡", PAGE_ROUTEMAP);
+    m_btnLoadBalancer = makeNavButton("Bandwidth Load", "⬡", PAGE_LOADBALANCER);
+    m_btnTimeline = makeNavButton("Timeline", "⬡", PAGE_TIMELINE);
+    m_btnHistory = makeNavButton("History", "⬡", PAGE_HISTORY);
+    m_btnNetworkPerf = makeNavButton("Net Perf", "⬡", PAGE_NETWORKPERF);
+
     layout->addWidget(m_btnConnections);
     layout->addWidget(m_btnProcesses);
     layout->addWidget(m_btnRouteMap);
+    layout->addWidget(m_btnLoadBalancer);
+    layout->addWidget(m_btnTimeline);
+    layout->addWidget(m_btnHistory);
+    layout->addWidget(m_btnNetworkPerf);
 
+    // ── INTELLIGENCE section ──────────────────────────────────────
+    layout->addWidget(mkDiv());
     layout->addWidget(mkSec("INTELLIGENCE"));
 
-    m_btnDns       = makeNavButton("DNS Map",   "⬡", PAGE_DNS);
-    m_btnAnomalies = makeNavButton("Anomalies", "⬡", PAGE_ANOMALIES);
+    m_btnDns = makeNavButton("DNS Map", "⬡", PAGE_DNS);
+    m_btnDnsLeak = makeNavButton("DNS Leaks", "⬡", PAGE_DNSLEAK);
+    m_btnBgp = makeNavButton("BGP Monitor", "⬡", PAGE_BGP);
+    m_btnThreatMap = makeNavButton("Threat Map", "⬡", PAGE_THREATMAP);
 
     // Anomaly row with badge
+    m_btnAnomalies = makeNavButton("Anomalies", "⬡", PAGE_ANOMALIES);
     auto *aRow = new QWidget(this);
     auto *aLayout = new QHBoxLayout(aRow);
     aLayout->setContentsMargins(0, 0, 8, 0);
@@ -116,10 +136,26 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
 
     layout->addWidget(m_btnDns);
     layout->addWidget(aRow);
+    layout->addWidget(m_btnDnsLeak);
+    layout->addWidget(m_btnBgp);
+    layout->addWidget(m_btnThreatMap);
+
+    // ── CONTROL section ───────────────────────────────────────────
+    layout->addWidget(mkDiv());
+    layout->addWidget(mkSec("CONTROL"));
+
+    m_btnFirewall = makeNavButton("Firewall", "⬡", PAGE_FIREWALL);
+    m_btnTrust = makeNavButton("Trust", "⬡", PAGE_TRUST);
+    m_btnCost = makeNavButton("Data Cost", "⬡", PAGE_COST);
+
+    layout->addWidget(m_btnFirewall);
+    layout->addWidget(m_btnTrust);
+    layout->addWidget(m_btnCost);
+
     layout->addStretch();
     layout->addWidget(mkDiv());
 
-    // Live status
+    // ── Live status ───────────────────────────────────────────────
     auto *statusW = new QWidget(this);
     statusW->setFixedHeight(44);
     auto *sl = new QHBoxLayout(statusW);
@@ -135,42 +171,50 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     sl->addStretch();
     layout->addWidget(statusW);
 
-    // Set initial active
-    setActive(m_btnConnections, true);
-    for (auto *b : {m_btnProcesses, m_btnRouteMap, m_btnDns, m_btnAnomalies})
-        setActive(b, false);
+    setActivePage(PAGE_CONNECTIONS);
 }
 
-QPushButton *Sidebar::makeNavButton(const QString &label, const QString &/*icon*/, Page page)
+QPushButton *Sidebar::makeNavButton(const QString &label,
+                                    const QString & /*icon*/,
+                                    Page page)
 {
     auto *btn = new QPushButton(label, this);
-    btn->setFixedHeight(40);
+    btn->setFixedHeight(38);
     btn->setCursor(Qt::PointingHandCursor);
-    btn->setStyleSheet(STYLE_INACTIVE);
-    // Store label for collapse/expand
     btn->setProperty("label", label);
-    connect(btn, &QPushButton::clicked, this, [this, page]() {
+    btn->setStyleSheet(STYLE_INACTIVE);
+    connect(btn, &QPushButton::clicked, this, [this, page]()
+            {
         setActivePage(page);
-        emit pageRequested(page);
-    });
+        emit pageRequested(page); });
     return btn;
 }
 
 void Sidebar::setActive(QPushButton *btn, bool active)
 {
-    btn->setStyleSheet(active ?
-        (m_collapsed ? STYLE_ACTIVE_ICON : STYLE_ACTIVE) :
-        (m_collapsed ? STYLE_INACTIVE_ICON : STYLE_INACTIVE));
+    btn->setStyleSheet(active
+                           ? (m_collapsed ? STYLE_ACTIVE_ICON : STYLE_ACTIVE)
+                           : (m_collapsed ? STYLE_INACTIVE_ICON : STYLE_INACTIVE));
 }
 
 void Sidebar::setActivePage(Page page)
 {
     m_activePage = page;
     setActive(m_btnConnections, page == PAGE_CONNECTIONS);
-    setActive(m_btnProcesses,   page == PAGE_PROCESSES);
-    setActive(m_btnRouteMap,    page == PAGE_ROUTEMAP);
-    setActive(m_btnDns,         page == PAGE_DNS);
-    setActive(m_btnAnomalies,   page == PAGE_ANOMALIES);
+    setActive(m_btnProcesses, page == PAGE_PROCESSES);
+    setActive(m_btnRouteMap, page == PAGE_ROUTEMAP);
+    setActive(m_btnDns, page == PAGE_DNS);
+    setActive(m_btnAnomalies, page == PAGE_ANOMALIES);
+    setActive(m_btnLoadBalancer, page == PAGE_LOADBALANCER);
+    setActive(m_btnHistory, page == PAGE_HISTORY);
+    setActive(m_btnCost, page == PAGE_COST);
+    setActive(m_btnTimeline, page == PAGE_TIMELINE);
+    setActive(m_btnDnsLeak, page == PAGE_DNSLEAK);
+    setActive(m_btnBgp, page == PAGE_BGP);
+    setActive(m_btnNetworkPerf, page == PAGE_NETWORKPERF);
+    setActive(m_btnThreatMap, page == PAGE_THREATMAP);
+    setActive(m_btnFirewall, page == PAGE_FIREWALL);
+    setActive(m_btnTrust, page == PAGE_TRUST);
 }
 
 void Sidebar::toggleCollapse()
@@ -193,37 +237,55 @@ void Sidebar::applyCollapsed(bool collapsed)
     anim2->setEndValue(collapsed ? COLLAPSED_W : EXPANDED_W);
     anim2->start(QAbstractAnimation::DeleteWhenStopped);
 
-    // Show/hide text
     m_titleLabel->setVisible(!collapsed);
     m_subLabel->setVisible(!collapsed);
     m_liveLabel->setVisible(!collapsed);
-    m_anomalyBadge->setVisible(!collapsed && m_anomalyBadge->text().size() > 0);
-
-    // Flip arrow
+    m_anomalyBadge->setVisible(!collapsed && !m_anomalyBadge->text().isEmpty());
     m_btnCollapse->setText(collapsed ? "▶" : "◀");
 
-    // Update button text (icon only when collapsed)
-    auto updateBtn = [&](QPushButton *btn, const QString &label, bool active) {
-        btn->setText(collapsed ? "●" : label);
-        setActive(btn, active);
+    struct
+    {
+        QPushButton *btn;
+        const char *label;
+        Page page;
+    } buttons[] = {
+        {m_btnConnections, "Connections", PAGE_CONNECTIONS},
+        {m_btnProcesses, "Processes", PAGE_PROCESSES},
+        {m_btnRouteMap, "Route Map", PAGE_ROUTEMAP},
+        {m_btnLoadBalancer, "Bandwidth Load", PAGE_LOADBALANCER},
+        {m_btnTimeline, "Timeline", PAGE_TIMELINE},
+        {m_btnHistory, "History", PAGE_HISTORY},
+        {m_btnNetworkPerf, "Net Perf", PAGE_NETWORKPERF},
+        {m_btnDns, "DNS Map", PAGE_DNS},
+        {m_btnAnomalies, "Anomalies", PAGE_ANOMALIES},
+        {m_btnDnsLeak, "DNS Leaks", PAGE_DNSLEAK},
+        {m_btnBgp, "BGP Monitor", PAGE_BGP},
+        {m_btnThreatMap, "Threat Map", PAGE_THREATMAP},
+        {m_btnFirewall, "Firewall", PAGE_FIREWALL},
+        {m_btnTrust, "Trust", PAGE_TRUST},
+        {m_btnCost, "Data Cost", PAGE_COST},
     };
-    updateBtn(m_btnConnections, "Connections", m_activePage == PAGE_CONNECTIONS);
-    updateBtn(m_btnProcesses,   "Processes",   m_activePage == PAGE_PROCESSES);
-    updateBtn(m_btnRouteMap,    "Route Map",   m_activePage == PAGE_ROUTEMAP);
-    updateBtn(m_btnDns,         "DNS Map",     m_activePage == PAGE_DNS);
-    updateBtn(m_btnAnomalies,   "Anomalies",   m_activePage == PAGE_ANOMALIES);
 
-    // Update section labels
-    for (auto *lbl : findChildren<QLabel*>("SectionTitle"))
+    for (auto &b : buttons)
+    {
+        b.btn->setText(collapsed ? "●" : b.label);
+        setActive(b.btn, m_activePage == b.page);
+    }
+
+    for (auto *lbl : findChildren<QLabel *>("SectionTitle"))
         lbl->setVisible(!collapsed);
 }
 
 void Sidebar::setAnomalyCount(int count)
 {
-    if (count <= 0) {
+    if (count <= 0)
+    {
         m_anomalyBadge->hide();
-    } else {
+    }
+    else
+    {
         m_anomalyBadge->setText(QString::number(qMin(count, 99)));
-        if (!m_collapsed) m_anomalyBadge->show();
+        if (!m_collapsed)
+            m_anomalyBadge->show();
     }
 }

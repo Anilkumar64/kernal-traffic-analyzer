@@ -1,5 +1,6 @@
 #include "ConnectionsTab.h"
 #include "Style.h"
+#include "SparklineDelegate.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -169,6 +170,13 @@ ConnectionsTab::ConnectionsTab(QWidget *parent) : QWidget(parent)
     m_table->setColumnWidth(TrafficModel::COL_DURATION,  80);
     m_table->setColumnWidth(TrafficModel::COL_PID,       55);
     m_table->sortByColumn(TrafficModel::COL_RATE_IN, Qt::DescendingOrder);
+    m_table->verticalHeader()->setDefaultSectionSize(42); // taller rows for sparkline
+
+    // Install sparkline delegate on IN and OUT rate columns
+    auto *sparkIn  = new SparklineDelegate(m_table);
+    auto *sparkOut = new SparklineDelegate(m_table);
+    m_table->setItemDelegateForColumn(TrafficModel::COL_RATE_IN,  sparkIn);
+    m_table->setItemDelegateForColumn(TrafficModel::COL_RATE_OUT, sparkOut);
 
     connect(m_table, &QTableView::clicked,
             this, &ConnectionsTab::onRowClicked);

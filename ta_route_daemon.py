@@ -152,6 +152,7 @@ def run_traceroute(dest_ip: str, timeout: int, queries: int, maxhops: int) -> li
     """
     cmd = [
         "traceroute",
+        "-T"
         "-n",                      # numeric, no DNS reverse lookups
         "-q", str(queries),        # queries per hop
         "-w", str(timeout),        # per-hop timeout

@@ -61,6 +61,16 @@ QVariant TrafficModel::data(const QModelIndex &index, int role) const
         return {};
     }
 
+    // Sparkline data — used by SparklineDelegate on IN column
+    if (role == Qt::UserRole + 1 && index.column() == COL_RATE_IN) {
+        QVector<quint32> hist = e.histIn.ordered();
+        return QVariant::fromValue(hist);
+    }
+    if (role == Qt::UserRole + 1 && index.column() == COL_RATE_OUT) {
+        QVector<quint32> hist = e.histOut.ordered();
+        return QVariant::fromValue(hist);
+    }
+
     if (role == Qt::TextAlignmentRole) {
         switch (index.column()) {
         case COL_RATE_OUT: case COL_RATE_IN: case COL_BYTES:

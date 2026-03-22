@@ -1,5 +1,36 @@
 #pragma once
 #include <QString>
+#include <QVector>
+
+// Ring buffer — stores last N rate samples (1 per second)
+struct RateHistory {
+    static constexpr int SIZE = 30;
+    quint32 samples[SIZE] = {};
+    int     head = 0;
+    int     count = 0;
+
+    void push(quint32 bps) {
+        samples[head] = bps;
+        head = (head + 1) % SIZE;
+        if (count < SIZE) count++;
+    }
+
+    // Returns samples oldest→newest, up to count entries
+    QVector<quint32> ordered() const {
+        QVector<quint32> v;
+        v.reserve(count);
+        int start = (head - count + SIZE) % SIZE;
+        for (int i = 0; i < count; ++i)
+            v.append(samples[(start + i) % SIZE]);
+        return v;
+    }
+
+    quint32 peak() const {
+        quint32 m = 0;
+        for (int i = 0; i < count; ++i) m = qMax(m, samples[i]);
+        return m;
+    }
+};
 
 enum class ConnState {
     SynSent, SynRecv, Established, FinWait, Closed, UdpActive, Unknown
@@ -22,8 +53,10 @@ struct TrafficEntry {
     qint64    bytesIn = 0;
     qint64    pktsOut = 0;
     qint64    pktsIn = 0;
-    quint32   rateOutBps = 0;
-    quint32   rateInBps = 0;
+    quint32     rateOutBps = 0;
+    quint32     rateInBps  = 0;
+    RateHistory histOut;   // last 30s out rates
+    RateHistory histIn;    // last 30s in rates
     qint64    firstSeen = 0;
     qint64    lastSeen = 0;
     qint64    duration = 0;

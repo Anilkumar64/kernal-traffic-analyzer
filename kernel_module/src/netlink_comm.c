@@ -10,9 +10,6 @@
 #include "../include/traffic_analyzer.h"
 #include "../include/route_store.h"
 
-/* ================================================================
- * NETLINK SOCKET
- * ================================================================ */
 static struct sock *ta_nl_sock = NULL;
 
 /* ================================================================
@@ -223,7 +220,6 @@ void ta_nl_send_route(const struct route_entry *e)
     {
         const struct route_hop *src = &e->hops[i];
         struct ta_route_hop_msg *dst = &msg->hops[i];
-
         dst->hop_num = src->hop_num;
         dst->ip = src->ip;
         dst->rtt_us = src->rtt_us;

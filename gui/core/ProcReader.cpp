@@ -16,6 +16,15 @@ ConnState ProcReader::parseState(const QString &s)
     return ConnState::Unknown;
 }
 
+QMap<QString, RateHistory> ProcReader::s_histOut;
+QMap<QString, RateHistory> ProcReader::s_histIn;
+
+QString ProcReader::connKey(const TrafficEntry &e) {
+    return QString("%1:%2-%3:%4")
+        .arg(e.srcIp).arg(e.srcPort)
+        .arg(e.destIp).arg(e.destPort);
+}
+
 QVector<TrafficEntry> ProcReader::readConnections()
 {
     QVector<TrafficEntry> r;
@@ -51,6 +60,14 @@ QVector<TrafficEntry> ProcReader::readConnections()
         e.lastSeen   = t[19].toLongLong();
         e.duration   = t[20].toLongLong();
         e.closedAt   = t[21].toLongLong();
+
+        // Push current rates into history ring buffer
+        QString key = connKey(e);
+        s_histOut[key].push(e.rateOutBps);
+        s_histIn[key].push(e.rateInBps);
+        e.histOut = s_histOut[key];
+        e.histIn  = s_histIn[key];
+
         r.append(e);
     }
     return r;

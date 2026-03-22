@@ -25,6 +25,13 @@ public:
     static QVector<DnsEntry>         readDnsMap();
     static QVector<AnomalyEntry>     readAnomalies();
     static QMap<QString,RouteEntry>  readRoutes();
+
+    // Preserve rate history across refreshes
+    // Key: "srcIp:srcPort-destIp:destPort"
+    static QMap<QString, RateHistory> s_histOut;
+    static QMap<QString, RateHistory> s_histIn;
+
 private:
     static ConnState parseState(const QString &s);
+    static QString   connKey(const TrafficEntry &e);
 };

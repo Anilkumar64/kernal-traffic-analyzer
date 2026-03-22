@@ -3,62 +3,78 @@
 #include <QColor>
 #include <QFont>
 
-namespace Style {
+namespace Style
+{
 
-namespace Color {
-    inline const QColor BgDeep      = QColor("#060b10");
-    inline const QColor BgBase      = QColor("#0d1117");
-    inline const QColor BgSurface   = QColor("#131920");
-    inline const QColor BgCard      = QColor("#1a2130");
-    inline const QColor BgHover     = QColor("#1e2840");
-    inline const QColor BgSelected  = QColor("#163050");
-    inline const QColor BorderDim   = QColor("#1c2530");
-    inline const QColor Border      = QColor("#253040");
-    inline const QColor BorderLight = QColor("#3a4f65");
-    inline const QColor TextPrimary = QColor("#dde8f5");
-    inline const QColor TextSecond  = QColor("#6e8399");
-    inline const QColor TextMuted   = QColor("#334455");
-    inline const QColor TextLink    = QColor("#5aabff");
-    inline const QColor AccentBlue  = QColor("#1d6ef5");
-    inline const QColor Success     = QColor("#20d060");
-    inline const QColor SuccessBg   = QColor("#081f12");
-    inline const QColor Warning     = QColor("#f0b800");
-    inline const QColor WarningBg   = QColor("#1a1500");
-    inline const QColor Danger      = QColor("#f04040");
-    inline const QColor DangerBg    = QColor("#1f0808");
+    namespace Color
+    {
+        inline const QColor BgDeep = QColor("#060b10");
+        inline const QColor BgBase = QColor("#0d1117");
+        inline const QColor BgSurface = QColor("#131920");
+        inline const QColor BgCard = QColor("#1a2130");
+        inline const QColor BgHover = QColor("#1e2840");
+        inline const QColor BgSelected = QColor("#163050");
+        inline const QColor BorderDim = QColor("#1c2530");
+        inline const QColor Border = QColor("#253040");
+        inline const QColor BorderLight = QColor("#3a4f65");
+        inline const QColor TextPrimary = QColor("#dde8f5");
+        inline const QColor TextSecond = QColor("#6e8399");
+        inline const QColor TextMuted = QColor("#334455");
+        inline const QColor TextLink = QColor("#5aabff");
+        inline const QColor AccentBlue = QColor("#1d6ef5");
+        inline const QColor Success = QColor("#20d060");
+        inline const QColor SuccessBg = QColor("#081f12");
+        inline const QColor Warning = QColor("#f0b800");
+        inline const QColor WarningBg = QColor("#1a1500");
+        inline const QColor Danger = QColor("#f04040");
+        inline const QColor DangerBg = QColor("#1f0808");
 
-    inline QColor forState(const QString &s) {
-        if (s == "ESTABLISHED") return Success;
-        if (s == "UDP_ACTIVE")  return QColor("#30c0f0");
-        if (s == "SYN_SENT")    return Warning;
-        if (s == "SYN_RECV")    return Warning;
-        if (s == "FIN_WAIT")    return TextSecond;
-        return TextMuted;
+        inline QColor forState(const QString &s)
+        {
+            if (s == "ESTABLISHED")
+                return Success;
+            if (s == "UDP_ACTIVE")
+                return QColor("#30c0f0");
+            if (s == "SYN_SENT")
+                return Warning;
+            if (s == "SYN_RECV")
+                return Warning;
+            if (s == "FIN_WAIT")
+                return TextSecond;
+            return TextMuted;
+        }
+        inline QColor forRtt(double ms)
+        {
+            if (ms <= 0)
+                return TextMuted;
+            if (ms < 50)
+                return Success;
+            if (ms < 150)
+                return Warning;
+            return Danger;
+        }
     }
-    inline QColor forRtt(double ms) {
-        if (ms <= 0)  return TextMuted;
-        if (ms < 50)  return Success;
-        if (ms < 150) return Warning;
-        return Danger;
-    }
-}
 
-namespace Font {
-    inline QFont mono(int px = 14) {
-        QFont f("Ubuntu Mono");
-        f.setPixelSize(px);
-        return f;
+    namespace Font
+    {
+        inline QFont mono(int px = 14)
+        {
+            QFont f("Ubuntu Mono");
+            f.setPixelSize(px);
+            return f;
+        }
+        inline QFont heading(int px = 16)
+        {
+            QFont f("Ubuntu Mono");
+            f.setPixelSize(px);
+            f.setWeight(QFont::Medium);
+            return f;
+        }
     }
-    inline QFont heading(int px = 16) {
-        QFont f("Ubuntu Mono");
-        f.setPixelSize(px);
-        f.setWeight(QFont::Medium);
-        return f;
-    }
-}
 
-inline QString globalStyleSheet() {
-    return R"(
+    inline QString globalStyleSheet()
+    {
+        return R"(
 
 /* ── Reset ───────────────────────────────────────────────────── */
 * { font-family: "Ubuntu Mono"; outline: none; }
@@ -335,6 +351,6 @@ QFrame[frameShape="5"] {
 }
 
 )";
-}
+    }
 
 } // namespace Style
