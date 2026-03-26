@@ -267,6 +267,28 @@ From the **File** menu:
 
 ---
 
+# Install system dependencies
+sudo apt install traceroute libsqlite3-dev qt6-base-dev cmake build-essential
+
+# Install Python GeoIP library
+pip install geoip2 --break-system-packages
+
+# Download MaxMind GeoLite2 databases (free account required at maxmind.com)
+# Place these two files at:
+# /usr/share/GeoIP/GeoLite2-City.mmdb
+# /usr/share/GeoIP/GeoLite2-ASN.mmdb
+
+cd ~/Documents/Projects/kernel_traffic_analyzer/kernel_module
+make clean && make -j$(nproc)
+sudo insmod traffic_analyzer.ko
+
+# Verify it loaded
+lsmod | grep traffic_analyzer
+dmesg | tail -5
+
+# Verify /proc files exist
+ls /proc/traffic_analyzer*
+
 ## Author
 
 Anil Reddy — Bhopal, Madhya Pradesh, India

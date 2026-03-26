@@ -196,6 +196,16 @@ static void velocity_record_new_conn(struct proc_entry *pe,
 /* ================================================================
  * ANOMALY DETECTION
  * ================================================================ */
+static bool is_system_process(const char *comm)
+{
+    /* Whitelist known system tools that generate high SYN counts */
+    return (strncmp(comm, "traceroute", 10) == 0 ||
+            strncmp(comm, "ping",       4)  == 0 ||
+            strncmp(comm, "nmap",       4)  == 0 ||
+            strncmp(comm, "curl",       4)  == 0 ||
+            strncmp(comm, "wget",       4)  == 0);
+}
+
 static u8 detect_anomalies(const struct proc_entry *pe)
 {
     u8 flags = ANOMALY_NONE;
@@ -206,7 +216,7 @@ static u8 detect_anomalies(const struct proc_entry *pe)
         flags |= ANOMALY_PORT_SCAN_FL;
     if (pe->total_conns >= ANOMALY_MAX_CONNS)
         flags |= ANOMALY_HIGH_CONNS_FL;
-    if (pe->tcp_conns > 0)
+    if (pe->tcp_conns > 0 && !is_system_process(pe->comm))
     {
         u32 syn_pct = (pe->syn_pending * 100) / pe->tcp_conns;
         if (syn_pct >= ANOMALY_SYN_RATIO)

@@ -394,6 +394,11 @@ void RouteMapWidget::rebuildList()
     int ci = 0;
 
     for (auto it = seen.begin(); it != seen.end(); ++it) {
+        // Skip local/private IPs — not routable
+        const QString &dip = it.key();
+        if (dip.startsWith("192.168.") || dip.startsWith("10.") ||
+            dip.startsWith("172.") || dip.startsWith("127.") ||
+            dip.startsWith("169.254") || dip == "0.0.0.0") continue;
         const TrafficEntry &e = *it.value();
         bool ready = m_routes.contains(e.destIp) &&
                      m_routes[e.destIp].isReady();
@@ -535,21 +540,31 @@ void RouteMapWidget::redrawRoutes()
                 bool hasCity = !h->city.isEmpty() &&
                                h->city != "-" && h->city != "0";
                 if (first || last || hasCity) {
-                    QString city = first ? "you" :
-                        (hasCity ? h->city : "");
-                    if (city.isEmpty()) continue;
-                    QString rttS = first ? "" :
-                        QString("  %1ms").arg(int(h->rttMs));
-                    auto *lbl = m_scene->addText(city + rttS);
-                    lbl->setDefaultTextColor(first ? col : QColor("#8b949e"));
-                    lbl->setFont(QFont("Ubuntu Mono", 8));
-                    double lx = qBound(
-                        2.0,
-                        pt.x() - lbl->boundingRect().width() / 2.0,
-                        SW - lbl->boundingRect().width() - 2.0);
-                    lbl->setPos(lx, pt.y() - r - 20);
-                    lbl->setZValue(13);
-                    m_routeItems.append(lbl);
+                    if (first) {
+                        // "you" label — above dot
+                        auto *lbl = m_scene->addText("you");
+                        lbl->setDefaultTextColor(col);
+                        lbl->setFont(QFont("Ubuntu Mono", 9));
+                        double lx = qBound(2.0,
+                            pt.x() - lbl->boundingRect().width() / 2.0,
+                            SW - lbl->boundingRect().width() - 2.0);
+                        lbl->setPos(lx, pt.y() - r - 22);
+                        lbl->setZValue(13);
+                        m_routeItems.append(lbl);
+                    } else if (hasCity) {
+                        // city + RTT — above dot
+                        QString rttS = h->rttMs > 0 ?
+                            QString(" %1ms").arg(int(h->rttMs)) : "";
+                        auto *lbl = m_scene->addText(h->city + rttS);
+                        lbl->setDefaultTextColor(QColor("#8b949e"));
+                        lbl->setFont(QFont("Ubuntu Mono", 8));
+                        double lx = qBound(2.0,
+                            pt.x() - lbl->boundingRect().width() / 2.0,
+                            SW - lbl->boundingRect().width() - 2.0);
+                        lbl->setPos(lx, pt.y() - r - 22);
+                        lbl->setZValue(13);
+                        m_routeItems.append(lbl);
+                    }
                 }
             }
         }
@@ -564,24 +579,8 @@ void RouteMapWidget::redrawRoutes()
         }
     }
 
-    // fit view
-    if (!m_selIp.isEmpty() && m_routes.contains(m_selIp) &&
-        m_routes[m_selIp].isReady()) {
-        QRectF bbox;
-        for (const auto &h : m_routes[m_selIp].hops) {
-            if (!h.hasGeo()) continue;
-            if (qAbs(h.lat) < 0.1 && qAbs(h.lon) < 0.1) continue;
-            QPointF pt = geo2scene(h.lat, h.lon);
-            if (bbox.isNull()) bbox = QRectF(pt, QSizeF(1, 1));
-            else bbox = bbox.united(QRectF(pt, QSizeF(1, 1)));
-        }
-        if (!bbox.isNull()) {
-            bbox.adjust(-80, -50, 80, 50);
-            m_view->fitInView(bbox, Qt::KeepAspectRatio);
-        }
-    } else {
-        m_view->fitInView(m_scene->sceneRect(), Qt::KeepAspectRatio);
-    }
+    // Always show full world map — user can scroll/zoom manually
+    m_view->fitInView(m_scene->sceneRect(), Qt::KeepAspectRatio);
 }
 
 // ================================================================

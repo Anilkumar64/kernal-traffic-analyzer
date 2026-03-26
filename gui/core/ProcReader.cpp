@@ -45,10 +45,10 @@ QVector<TrafficEntry> ProcReader::readConnections()
         e.state      = parseState(t[4]);
         e.isDns      = (t[5] == "YES");
         e.protocol   = t[6];
-        e.srcIp      = t[7];
-        e.destIp     = t[8];
-        e.srcPort    = t[9].toInt();
-        e.destPort   = t[10].toInt();
+        e.srcIp      = t[8];   // local IP (NAT)
+        e.destIp     = t[7];   // real remote IP
+        e.srcPort    = t[10].toInt();
+        e.destPort   = t[9].toInt();
         e.domain     = t[11];
         e.bytesOut   = t[12].toLongLong();
         e.bytesIn    = t[13].toLongLong();
