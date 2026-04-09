@@ -60,6 +60,7 @@ bool HistoryDB::open()
             PRIMARY KEY (date, process)
         );
     )");
+    execSQL("CREATE INDEX IF NOT EXISTS idx_daily_proc_date ON daily_totals(process, date);");
 
     m_open = true;
     prune();
