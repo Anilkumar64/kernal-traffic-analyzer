@@ -19,7 +19,8 @@ HistoryDB::~HistoryDB() { close(); }
 bool HistoryDB::open()
 {
     QMutexLocker lock(&m_mutex);
-    if (m_open) return true;
+    if (m_open)
+        return true;
 
     QString dir = QStandardPaths::writableLocation(
         QStandardPaths::AppLocalDataLocation);
@@ -27,8 +28,9 @@ bool HistoryDB::open()
     QString path = dir + "/history.db";
 
     int rc = sqlite3_open(path.toUtf8().constData(),
-                          reinterpret_cast<sqlite3**>(&m_db));
-    if (rc != SQLITE_OK) {
+                          reinterpret_cast<sqlite3 **>(&m_db));
+    if (rc != SQLITE_OK)
+    {
         qWarning() << "HistoryDB: cannot open" << path;
         return false;
     }
@@ -69,8 +71,9 @@ bool HistoryDB::open()
 void HistoryDB::close()
 {
     QMutexLocker lock(&m_mutex);
-    if (m_db) {
-        sqlite3_close(reinterpret_cast<sqlite3*>(m_db));
+    if (m_db)
+    {
+        sqlite3_close(reinterpret_cast<sqlite3 *>(m_db));
         m_db = nullptr;
     }
     m_open = false;
@@ -78,12 +81,14 @@ void HistoryDB::close()
 
 void HistoryDB::execSQL(const QString &sql)
 {
-    if (!m_db) return;
+    if (!m_db)
+        return;
     char *errmsg = nullptr;
-    sqlite3_exec(reinterpret_cast<sqlite3*>(m_db),
+    sqlite3_exec(reinterpret_cast<sqlite3 *>(m_db),
                  sql.toUtf8().constData(),
                  nullptr, nullptr, &errmsg);
-    if (errmsg) {
+    if (errmsg)
+    {
         qWarning() << "HistoryDB SQL error:" << errmsg;
         sqlite3_free(errmsg);
     }
@@ -96,24 +101,31 @@ void HistoryDB::insertSample(const BwSample &s)
 
 void HistoryDB::insertSamples(const QVector<BwSample> &samples)
 {
-    if (!m_open || samples.isEmpty()) return;
+    if (!m_open || samples.isEmpty())
+        return;
     QMutexLocker lock(&m_mutex);
 
-    sqlite3 *db = reinterpret_cast<sqlite3*>(m_db);
+    sqlite3 *db = reinterpret_cast<sqlite3 *>(m_db);
     sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
 
     const char *sql =
         "INSERT INTO bw_samples(ts,pid,process,out_bps,in_bps,out_bytes,in_bytes)"
         " VALUES(?,?,?,?,?,?,?);";
     sqlite3_stmt *stmt = nullptr;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK || !stmt)
+    {
+        qWarning() << "HistoryDB: prepare failed (insertSamples):" << sqlite3_errmsg(db);
+        sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return;
+    }
 
     QString today = QDateTime::currentDateTime().toString("yyyy-MM-dd");
 
-    for (const auto &s : samples) {
+    for (const auto &s : samples)
+    {
         sqlite3_bind_int64(stmt, 1, s.ts);
-        sqlite3_bind_int  (stmt, 2, s.pid);
-        sqlite3_bind_text (stmt, 3, s.process.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 2, s.pid);
+        sqlite3_bind_text(stmt, 3, s.process.toUtf8().constData(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int64(stmt, 4, s.outBps);
         sqlite3_bind_int64(stmt, 5, s.inBps);
         sqlite3_bind_int64(stmt, 6, s.outBytes);
@@ -130,11 +142,17 @@ void HistoryDB::insertSamples(const QVector<BwSample> &samples)
         " total_out=total_out+excluded.total_out,"
         " total_in=total_in+excluded.total_in;";
     sqlite3_stmt *us = nullptr;
-    sqlite3_prepare_v2(db, upsert, -1, &us, nullptr);
+    if (sqlite3_prepare_v2(db, upsert, -1, &us, nullptr) != SQLITE_OK || !us)
+    {
+        qWarning() << "HistoryDB: prepare failed (upsert):" << sqlite3_errmsg(db);
+        sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
+        return;
+    }
 
-    for (const auto &s : samples) {
-        sqlite3_bind_text (us, 1, today.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text (us, 2, s.process.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    for (const auto &s : samples)
+    {
+        sqlite3_bind_text(us, 1, today.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(us, 2, s.process.toUtf8().constData(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int64(us, 3, s.outBytes);
         sqlite3_bind_int64(us, 4, s.inBytes);
         sqlite3_step(us);
@@ -149,29 +167,31 @@ QVector<BwSample> HistoryDB::getLastHour(const QString &process)
 {
     QMutexLocker lock(&m_mutex);
     QVector<BwSample> r;
-    if (!m_open) return r;
+    if (!m_open)
+        return r;
 
     qint64 since = QDateTime::currentSecsSinceEpoch() - 3600;
     QString sql = QString(
         "SELECT ts,pid,process,out_bps,in_bps,out_bytes,in_bytes"
         " FROM bw_samples WHERE process=? AND ts>=? ORDER BY ts ASC");
 
-    sqlite3 *db = reinterpret_cast<sqlite3*>(m_db);
+    sqlite3 *db = reinterpret_cast<sqlite3 *>(m_db);
     sqlite3_stmt *stmt = nullptr;
     sqlite3_prepare_v2(db, sql.toUtf8().constData(), -1, &stmt, nullptr);
-    sqlite3_bind_text (stmt, 1, process.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, process.toUtf8().constData(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 2, since);
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
         BwSample s;
-        s.ts       = sqlite3_column_int64(stmt, 0);
-        s.pid      = sqlite3_column_int  (stmt, 1);
-        s.process  = QString::fromUtf8(reinterpret_cast<const char*>(
-                         sqlite3_column_text(stmt, 2)));
-        s.outBps   = sqlite3_column_int64(stmt, 3);
-        s.inBps    = sqlite3_column_int64(stmt, 4);
+        s.ts = sqlite3_column_int64(stmt, 0);
+        s.pid = sqlite3_column_int(stmt, 1);
+        s.process = QString::fromUtf8(reinterpret_cast<const char *>(
+            sqlite3_column_text(stmt, 2)));
+        s.outBps = sqlite3_column_int64(stmt, 3);
+        s.inBps = sqlite3_column_int64(stmt, 4);
         s.outBytes = sqlite3_column_int64(stmt, 5);
-        s.inBytes  = sqlite3_column_int64(stmt, 6);
+        s.inBytes = sqlite3_column_int64(stmt, 6);
         r.append(s);
     }
     sqlite3_finalize(stmt);
@@ -182,7 +202,8 @@ QVector<BwSample> HistoryDB::getLast24h(const QString &process)
 {
     QMutexLocker lock(&m_mutex);
     QVector<BwSample> r;
-    if (!m_open) return r;
+    if (!m_open)
+        return r;
 
     qint64 since = QDateTime::currentSecsSinceEpoch() - 86400;
     // Bucket by hour for 24h view
@@ -192,21 +213,22 @@ QVector<BwSample> HistoryDB::getLast24h(const QString &process)
         " FROM bw_samples WHERE process=? AND ts>=?"
         " GROUP BY hour ORDER BY hour ASC";
 
-    sqlite3 *db = reinterpret_cast<sqlite3*>(m_db);
+    sqlite3 *db = reinterpret_cast<sqlite3 *>(m_db);
     sqlite3_stmt *stmt = nullptr;
     sqlite3_prepare_v2(db, sql.toUtf8().constData(), -1, &stmt, nullptr);
-    sqlite3_bind_text (stmt, 1, process.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, process.toUtf8().constData(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 2, since);
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
         BwSample s;
-        s.ts       = sqlite3_column_int64(stmt, 0);
-        s.process  = QString::fromUtf8(reinterpret_cast<const char*>(
-                         sqlite3_column_text(stmt, 1)));
-        s.outBps   = quint32(sqlite3_column_double(stmt, 2));
-        s.inBps    = quint32(sqlite3_column_double(stmt, 3));
+        s.ts = sqlite3_column_int64(stmt, 0);
+        s.process = QString::fromUtf8(reinterpret_cast<const char *>(
+            sqlite3_column_text(stmt, 1)));
+        s.outBps = quint32(sqlite3_column_double(stmt, 2));
+        s.inBps = quint32(sqlite3_column_double(stmt, 3));
         s.outBytes = sqlite3_column_int64(stmt, 4);
-        s.inBytes  = sqlite3_column_int64(stmt, 5);
+        s.inBytes = sqlite3_column_int64(stmt, 5);
         r.append(s);
     }
     sqlite3_finalize(stmt);
@@ -217,28 +239,29 @@ QVector<DailyTotal> HistoryDB::getDailyTotals(const QString &process, int days)
 {
     QMutexLocker lock(&m_mutex);
     QVector<DailyTotal> r;
-    if (!m_open) return r;
+    if (!m_open)
+        return r;
 
-    QString since = QDate::currentDate().addDays(-days)
-                        .toString("yyyy-MM-dd");
+    QString since = QDate::currentDate().addDays(-days).toString("yyyy-MM-dd");
     QString sql =
         "SELECT date,process,total_out,total_in FROM daily_totals"
         " WHERE process=? AND date>=? ORDER BY date ASC";
 
-    sqlite3 *db = reinterpret_cast<sqlite3*>(m_db);
+    sqlite3 *db = reinterpret_cast<sqlite3 *>(m_db);
     sqlite3_stmt *stmt = nullptr;
     sqlite3_prepare_v2(db, sql.toUtf8().constData(), -1, &stmt, nullptr);
     sqlite3_bind_text(stmt, 1, process.toUtf8().constData(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, since.toUtf8().constData(),   -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, since.toUtf8().constData(), -1, SQLITE_TRANSIENT);
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
         DailyTotal d;
-        d.date     = QString::fromUtf8(reinterpret_cast<const char*>(
-                         sqlite3_column_text(stmt, 0)));
-        d.process  = QString::fromUtf8(reinterpret_cast<const char*>(
-                         sqlite3_column_text(stmt, 1)));
+        d.date = QString::fromUtf8(reinterpret_cast<const char *>(
+            sqlite3_column_text(stmt, 0)));
+        d.process = QString::fromUtf8(reinterpret_cast<const char *>(
+            sqlite3_column_text(stmt, 1)));
         d.totalOut = sqlite3_column_int64(stmt, 2);
-        d.totalIn  = sqlite3_column_int64(stmt, 3);
+        d.totalIn = sqlite3_column_int64(stmt, 3);
         r.append(d);
     }
     sqlite3_finalize(stmt);
@@ -249,27 +272,28 @@ QVector<DailyTotal> HistoryDB::getAllDailyTotals(int days)
 {
     QMutexLocker lock(&m_mutex);
     QVector<DailyTotal> r;
-    if (!m_open) return r;
+    if (!m_open)
+        return r;
 
-    QString since = QDate::currentDate().addDays(-days)
-                        .toString("yyyy-MM-dd");
+    QString since = QDate::currentDate().addDays(-days).toString("yyyy-MM-dd");
     QString sql =
         "SELECT date, process, SUM(total_out), SUM(total_in)"
         " FROM daily_totals WHERE date>=?"
         " GROUP BY date ORDER BY date ASC";
 
-    sqlite3 *db = reinterpret_cast<sqlite3*>(m_db);
+    sqlite3 *db = reinterpret_cast<sqlite3 *>(m_db);
     sqlite3_stmt *stmt = nullptr;
     sqlite3_prepare_v2(db, sql.toUtf8().constData(), -1, &stmt, nullptr);
     sqlite3_bind_text(stmt, 1, since.toUtf8().constData(), -1, SQLITE_TRANSIENT);
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
         DailyTotal d;
-        d.date     = QString::fromUtf8(reinterpret_cast<const char*>(
-                         sqlite3_column_text(stmt, 0)));
-        d.process  = "*";
+        d.date = QString::fromUtf8(reinterpret_cast<const char *>(
+            sqlite3_column_text(stmt, 0)));
+        d.process = "*";
         d.totalOut = sqlite3_column_int64(stmt, 2);
-        d.totalIn  = sqlite3_column_int64(stmt, 3);
+        d.totalIn = sqlite3_column_int64(stmt, 3);
         r.append(d);
     }
     sqlite3_finalize(stmt);
@@ -280,29 +304,51 @@ QStringList HistoryDB::getProcessList()
 {
     QMutexLocker lock(&m_mutex);
     QStringList r;
-    if (!m_open) return r;
+    if (!m_open)
+        return r;
 
     const char *sql =
         "SELECT DISTINCT process FROM bw_samples ORDER BY process ASC";
-    sqlite3 *db = reinterpret_cast<sqlite3*>(m_db);
+    sqlite3 *db = reinterpret_cast<sqlite3 *>(m_db);
     sqlite3_stmt *stmt = nullptr;
     sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
     while (sqlite3_step(stmt) == SQLITE_ROW)
-        r << QString::fromUtf8(reinterpret_cast<const char*>(
-                sqlite3_column_text(stmt, 0)));
+        r << QString::fromUtf8(reinterpret_cast<const char *>(
+            sqlite3_column_text(stmt, 0)));
     sqlite3_finalize(stmt);
     return r;
 }
 
 void HistoryDB::prune()
 {
-    if (!m_db) return;
-    qint64 cutoff = QDateTime::currentSecsSinceEpoch() - 7*86400;
-    QString sql = QString("DELETE FROM bw_samples WHERE ts < %1;").arg(cutoff);
-    execSQL(sql);
+    if (!m_db)
+        return;
+    QMutexLocker lock(&m_mutex);
+    sqlite3 *db = reinterpret_cast<sqlite3 *>(m_db);
 
-    QString dateCutoff = QDate::currentDate().addDays(-30)
-                             .toString("yyyy-MM-dd");
-    execSQL(QString("DELETE FROM daily_totals WHERE date < '%1';")
-                .arg(dateCutoff));
+    // Prune old samples using prepared statement
+    {
+        qint64 cutoff = QDateTime::currentSecsSinceEpoch() - 7 * 86400;
+        const char *sql = "DELETE FROM bw_samples WHERE ts < ?;";
+        sqlite3_stmt *stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK && stmt)
+        {
+            sqlite3_bind_int64(stmt, 1, cutoff);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    // Prune old daily totals using prepared statement
+    {
+        QString dateCutoff = QDate::currentDate().addDays(-30).toString("yyyy-MM-dd");
+        const char *sql = "DELETE FROM daily_totals WHERE date < ?;";
+        sqlite3_stmt *stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK && stmt)
+        {
+            sqlite3_bind_text(stmt, 1, dateCutoff.toUtf8().constData(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    }
 }
