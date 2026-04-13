@@ -51,11 +51,13 @@ RouteFingerprint BgpMonitor::buildFingerprint(const RouteEntry &route) const
 {
     RouteFingerprint fp;
     QSet<QString> seenCountry;
-    for (const auto &hop : route.hops) {
+    for (const auto &hop : route.hops)
+    {
         if (hop.asn > 0)
             fp.asns.append(hop.asn);
         if (!hop.cc.isEmpty() && hop.cc != "-" &&
-            !seenCountry.contains(hop.cc)) {
+            !seenCountry.contains(hop.cc))
+        {
             seenCountry.insert(hop.cc);
             fp.countries.append(hop.cc);
         }
@@ -65,34 +67,38 @@ RouteFingerprint BgpMonitor::buildFingerprint(const RouteEntry &route) const
 }
 
 double BgpMonitor::countrySimilarity(const QVector<QString> &a,
-                                      const QVector<QString> &b) const
+                                     const QVector<QString> &b) const
 {
-    if (a.isEmpty() || b.isEmpty()) return 1.0;
+    if (a.isEmpty() || b.isEmpty())
+        return 1.0;
     QSet<QString> sa(a.begin(), a.end());
     QSet<QString> sb(b.begin(), b.end());
     QSet<QString> inter = sa & sb;
-    QSet<QString> uni   = sa | sb;
+    QSet<QString> uni = sa | sb;
     return uni.isEmpty() ? 1.0 : double(inter.size()) / double(uni.size());
 }
 
 bool BgpMonitor::fingerprinthMatch(const RouteFingerprint &a,
-                                    const RouteFingerprint &b) const
+                                   const RouteFingerprint &b) const
 {
     return countrySimilarity(a.countries, b.countries) >= 0.7;
 }
 
 void BgpMonitor::updateRoute(const QString &ip,
-                              const QString &domain,
-                              const RouteEntry &route)
+                             const QString &domain,
+                             const RouteEntry &route)
 {
-    if (!route.isReady() || domain.isEmpty() || domain == "-") return;
+    if (!route.isReady() || domain.isEmpty() || domain == "-")
+        return;
 
     RouteFingerprint newFp = buildFingerprint(route);
-    if (newFp.countries.isEmpty()) return;
+    if (newFp.countries.isEmpty())
+        return;
 
-    if (!m_learned.contains(domain)) {
+    if (!m_learned.contains(domain))
+    {
         DomainFingerprints df;
-        df.domain    = domain;
+        df.domain = domain;
         df.firstSeen = QDateTime::currentSecsSinceEpoch();
         df.prints.append(newFp);
         m_learned[domain] = df;
@@ -103,8 +109,10 @@ void BgpMonitor::updateRoute(const QString &ip,
     DomainFingerprints &df = m_learned[domain];
 
     // Check if this fingerprint matches any known one
-    for (auto &fp : df.prints) {
-        if (fingerprinthMatch(fp, newFp)) {
+    for (auto &fp : df.prints)
+    {
+        if (fingerprinthMatch(fp, newFp))
+        {
             fp.count++;
             emit dataChanged();
             return;
@@ -112,56 +120,66 @@ void BgpMonitor::updateRoute(const QString &ip,
     }
 
     // New fingerprint — check if it's suspicious
-    if (!isLearning() && !df.prints.isEmpty()) {
+    if (!isLearning() && !df.prints.isEmpty())
+    {
+        if (df.prints.size() < 1)
+            goto add_fp; // safety guard
         // Find most common fingerprint
         const RouteFingerprint &common = *std::max_element(
             df.prints.begin(), df.prints.end(),
-            [](const RouteFingerprint &a, const RouteFingerprint &b) {
+            [](const RouteFingerprint &a, const RouteFingerprint &b)
+            {
                 return a.count < b.count;
             });
 
         double sim = countrySimilarity(common.countries, newFp.countries);
-        if (sim < 0.5) {
+        if (sim < 0.5)
+        {
             BgpAlert alert;
-            alert.timestamp        = QDateTime::currentSecsSinceEpoch();
-            alert.domain           = domain;
-            alert.ip               = ip;
+            alert.timestamp = QDateTime::currentSecsSinceEpoch();
+            alert.domain = domain;
+            alert.ip = ip;
             alert.expectedCountries = QStringList(
                 common.countries.begin(), common.countries.end());
-            alert.actualCountries  = QStringList(
+            alert.actualCountries = QStringList(
                 newFp.countries.begin(), newFp.countries.end());
             alert.risk = sim < 0.2 ? "HIGH" : "MEDIUM";
 
             m_alerts.prepend(alert);
-            if (m_alerts.size() > 100) m_alerts.resize(100);
+            if (m_alerts.size() > 100)
+                m_alerts.resize(100);
 
             emit bgpAlertDetected(alert);
         }
     }
 
-    // Add new fingerprint
+// Add new fingerprint
+add_fp:
     df.prints.append(newFp);
-    if (df.prints.size() > 20) df.prints.removeFirst();
+    if (df.prints.size() > 20)
+        df.prints.removeFirst();
     emit dataChanged();
 }
 
 void BgpMonitor::loadFromDisk()
 {
     QFile f(storagePath());
-    if (!f.open(QIODevice::ReadOnly)) return;
+    if (!f.open(QIODevice::ReadOnly))
+        return;
     QJsonObject root = QJsonDocument::fromJson(f.readAll()).object();
 
-    m_startTime = root.value("start_time").toDouble(
-        QDateTime::currentSecsSinceEpoch());
+    m_startTime = root.value("start_time").toDouble(QDateTime::currentSecsSinceEpoch());
 
     QJsonObject domains = root.value("domains").toObject();
-    for (auto it = domains.begin(); it != domains.end(); ++it) {
+    for (auto it = domains.begin(); it != domains.end(); ++it)
+    {
         DomainFingerprints df;
         QJsonObject dobj = it.value().toObject();
-        df.domain    = it.key();
+        df.domain = it.key();
         df.firstSeen = qint64(dobj.value("first_seen").toDouble());
 
-        for (const auto &fpv : dobj.value("fingerprints").toArray()) {
+        for (const auto &fpv : dobj.value("fingerprints").toArray())
+        {
             QJsonObject fpo = fpv.toObject();
             RouteFingerprint fp;
             for (const auto &a : fpo.value("asns").toArray())
@@ -181,20 +199,24 @@ void BgpMonitor::saveToDisk()
     root["start_time"] = double(m_startTime);
 
     QJsonObject domains;
-    for (auto it = m_learned.begin(); it != m_learned.end(); ++it) {
+    for (auto it = m_learned.begin(); it != m_learned.end(); ++it)
+    {
         const DomainFingerprints &df = it.value();
         QJsonObject dobj;
         dobj["first_seen"] = double(df.firstSeen);
 
         QJsonArray fps;
-        for (const auto &fp : df.prints) {
+        for (const auto &fp : df.prints)
+        {
             QJsonObject fpo;
             QJsonArray asns, countries;
-            for (int a : fp.asns) asns.append(a);
-            for (const QString &c : fp.countries) countries.append(c);
-            fpo["asns"]      = asns;
+            for (int a : fp.asns)
+                asns.append(a);
+            for (const QString &c : fp.countries)
+                countries.append(c);
+            fpo["asns"] = asns;
             fpo["countries"] = countries;
-            fpo["count"]     = fp.count;
+            fpo["count"] = fp.count;
             fps.append(fpo);
         }
         dobj["fingerprints"] = fps;
@@ -203,6 +225,11 @@ void BgpMonitor::saveToDisk()
     root["domains"] = domains;
 
     QFile f(storagePath());
-    if (f.open(QIODevice::WriteOnly))
-        f.write(QJsonDocument(root).toJson());
+    if (!f.open(QIODevice::WriteOnly))
+    {
+        qWarning() << "BgpMonitor: failed to save to" << storagePath();
+        return;
+    }
+    if (f.write(QJsonDocument(root).toJson()) == -1)
+        qWarning() << "BgpMonitor: write failed to" << storagePath();
 }
