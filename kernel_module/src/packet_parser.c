@@ -252,13 +252,13 @@ void parse_packet(struct sk_buff *skb, bool incoming)
             real_pid = 0;
         }
 
-        /* 7b. Inode cache */
-        if (sk->sk_socket && sk->sk_socket->file)
+        /* 7b. Inode cache — use sock_i_ino() for safe atomic access
+         *     instead of chasing sk->sk_socket->file which can be
+         *     freed concurrently (use-after-free). */
         {
-            struct inode *sock_inode = file_inode(sk->sk_socket->file);
-            if (sock_inode)
+            unsigned long ino = sock_i_ino(sk);
+            if (ino)
             {
-                unsigned long ino = sock_inode->i_ino;
                 real_pid = inode_cache_lookup(ino);
                 if (real_pid && pid_is_alive(real_pid))
                 {
@@ -284,18 +284,14 @@ void parse_packet(struct sk_buff *skb, bool incoming)
             goto done;
         }
 
-        /* 7d. Full resolver */
-        if (should_scan && sk->sk_socket)
+        /* 7d. Full resolver — use sock_i_ino() to avoid UAF on sk_socket */
+        if (should_scan)
         {
-            struct file *sock_file = sk->sk_socket->file;
-            unsigned long ino = 0;
-
-            if (sock_file && file_inode(sock_file))
-                ino = file_inode(sock_file)->i_ino;
+            unsigned long ino = sock_i_ino(sk);
 
             real_pid = resolve_pid_from_inode(ino);
-            if (!real_pid && sock_file)
-                real_pid = resolve_pid_from_file(sock_file);
+            if (!real_pid && sk->sk_socket && sk->sk_socket->file)
+                real_pid = resolve_pid_from_file(sk->sk_socket->file);
 
             if (real_pid > 0 && pid_is_alive(real_pid))
             {
