@@ -26,7 +26,8 @@ DetailPanel::DetailPanel(QWidget *parent) : QWidget(parent)
     auto *statsRow = new QHBoxLayout();
     statsRow->setSpacing(8);
 
-    auto makeCard = [&](const QString &label, QLabel *&val) {
+    auto makeCard = [&](const QString &label, QLabel *&val)
+    {
         auto *card = new QWidget(this);
         card->setObjectName("StatCard");
         card->setFixedHeight(58);
@@ -45,10 +46,10 @@ DetailPanel::DetailPanel(QWidget *parent) : QWidget(parent)
         statsRow->addWidget(card);
     };
 
-    makeCard("OUT RATE",  m_statOut);
-    makeCard("IN RATE",   m_statIn);
-    makeCard("TOTAL",     m_statBytes);
-    makeCard("DURATION",  m_statDuration);
+    makeCard("OUT RATE", m_statOut);
+    makeCard("IN RATE", m_statIn);
+    makeCard("TOTAL", m_statBytes);
+    makeCard("DURATION", m_statDuration);
 
     m_domain = new QLabel("", this);
     m_domain->setStyleSheet("color:#58a6ff;font-size:11px;font-family:Monospace;");
@@ -71,7 +72,9 @@ void DetailPanel::showEntry(const TrafficEntry &e)
 {
     m_process->setText(
         QString("%1  (PID %2)  |  %3")
-            .arg(e.process).arg(e.pid).arg(e.stateString()));
+            .arg(e.process)
+            .arg(e.pid)
+            .arg(e.stateString()));
     m_statOut->setText(e.formatRate(e.rateOutBps));
     m_statIn->setText(e.formatRate(e.rateInBps));
     m_statBytes->setText(e.formatBytes(e.bytesOut + e.bytesIn));
@@ -80,7 +83,10 @@ void DetailPanel::showEntry(const TrafficEntry &e)
     m_domain->setText(dom + ":" + QString::number(e.destPort));
     m_route->setText(
         QString("SRC %1:%2  ->  DST %3:%4")
-            .arg(e.srcIp).arg(e.srcPort).arg(e.destIp).arg(e.destPort));
+            .arg(e.srcIp)
+            .arg(e.srcPort)
+            .arg(e.destIp)
+            .arg(e.destPort));
     show();
 }
 
@@ -114,7 +120,7 @@ ConnectionsTab::ConnectionsTab(QWidget *parent) : QWidget(parent)
 
     m_stateFilter = new QComboBox(topBar);
     m_stateFilter->addItems({"All states", "ESTABLISHED", "SYN_SENT",
-                              "FIN_WAIT", "CLOSED", "UDP_ACTIVE"});
+                             "FIN_WAIT", "CLOSED", "UDP_ACTIVE"});
     connect(m_stateFilter, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &ConnectionsTab::onStateFilterChanged);
     tl->addWidget(m_stateFilter);
@@ -158,24 +164,24 @@ ConnectionsTab::ConnectionsTab(QWidget *parent) : QWidget(parent)
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_table->horizontalHeader()->setStretchLastSection(false);
 
-    m_table->setColumnWidth(TrafficModel::COL_PROCESS,  130);
-    m_table->setColumnWidth(TrafficModel::COL_DOMAIN,   190);
-    m_table->setColumnWidth(TrafficModel::COL_PROTO,     55);
-    m_table->setColumnWidth(TrafficModel::COL_STATE,    110);
-    m_table->setColumnWidth(TrafficModel::COL_SRC,      145);
-    m_table->setColumnWidth(TrafficModel::COL_DEST,     145);
-    m_table->setColumnWidth(TrafficModel::COL_RATE_OUT,  85);
-    m_table->setColumnWidth(TrafficModel::COL_RATE_IN,   85);
-    m_table->setColumnWidth(TrafficModel::COL_BYTES,     85);
-    m_table->setColumnWidth(TrafficModel::COL_DURATION,  80);
-    m_table->setColumnWidth(TrafficModel::COL_PID,       55);
+    m_table->setColumnWidth(TrafficModel::COL_PROCESS, 130);
+    m_table->setColumnWidth(TrafficModel::COL_DOMAIN, 190);
+    m_table->setColumnWidth(TrafficModel::COL_PROTO, 55);
+    m_table->setColumnWidth(TrafficModel::COL_STATE, 110);
+    m_table->setColumnWidth(TrafficModel::COL_SRC, 145);
+    m_table->setColumnWidth(TrafficModel::COL_DEST, 145);
+    m_table->setColumnWidth(TrafficModel::COL_RATE_OUT, 85);
+    m_table->setColumnWidth(TrafficModel::COL_RATE_IN, 85);
+    m_table->setColumnWidth(TrafficModel::COL_BYTES, 85);
+    m_table->setColumnWidth(TrafficModel::COL_DURATION, 80);
+    m_table->setColumnWidth(TrafficModel::COL_PID, 55);
     m_table->sortByColumn(TrafficModel::COL_RATE_IN, Qt::DescendingOrder);
     m_table->verticalHeader()->setDefaultSectionSize(42); // taller rows for sparkline
 
     // Install sparkline delegate on IN and OUT rate columns
-    auto *sparkIn  = new SparklineDelegate(m_table);
+    auto *sparkIn = new SparklineDelegate(m_table);
     auto *sparkOut = new SparklineDelegate(m_table);
-    m_table->setItemDelegateForColumn(TrafficModel::COL_RATE_IN,  sparkIn);
+    m_table->setItemDelegateForColumn(TrafficModel::COL_RATE_IN, sparkIn);
     m_table->setItemDelegateForColumn(TrafficModel::COL_RATE_OUT, sparkOut);
 
     connect(m_table, &QTableView::clicked,
@@ -201,8 +207,11 @@ void ConnectionsTab::updateData(const QVector<TrafficEntry> &entries)
 
 void ConnectionsTab::onRowClicked(const QModelIndex &index)
 {
-    if (!index.isValid()) return;
+    if (!index.isValid())
+        return;
     QModelIndex src = m_proxy->mapToSource(index);
+    if (!src.isValid() || src.row() < 0 || src.row() >= m_model->rowCount())
+        return;
     const TrafficEntry &e = m_model->entryAt(src.row());
     m_detail->showEntry(e);
     m_splitter->setSizes({10000, 150});
@@ -217,10 +226,13 @@ void ConnectionsTab::onFilterChanged(const QString &text)
 
 void ConnectionsTab::onStateFilterChanged(int idx)
 {
-    if (idx == 0) {
+    if (idx == 0)
+    {
         m_proxy->setFilterKeyColumn(-1);
         m_proxy->setFilterFixedString(m_filterEdit->text());
-    } else {
+    }
+    else
+    {
         m_proxy->setFilterKeyColumn(TrafficModel::COL_STATE);
         m_proxy->setFilterFixedString(m_stateFilter->itemText(idx));
     }
