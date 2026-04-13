@@ -5,26 +5,26 @@
 #include <QPropertyAnimation>
 
 static const QString STYLE_ACTIVE =
-    "QPushButton { background:#1f3349; color:#58a6ff; border:none; "
-    "border-left:2px solid #1f6feb; text-align:left; padding:10px 14px; "
-    "font-size:13px; font-family:'Ubuntu Mono'; }";
+    "QPushButton { background:#e0ecff; color:#6366f1; border:none; "
+    "border-left:3px solid #6366f1; text-align:left; padding:10px 14px; "
+    "font-size:13px; font-family:'Ubuntu Mono'; font-weight:600; }";
 
 static const QString STYLE_INACTIVE =
-    "QPushButton { background:transparent; color:#8b949e; border:none; "
+    "QPushButton { background:transparent; color:#5c6b7f; border:none; "
     "text-align:left; padding:10px 14px; font-size:13px; "
     "font-family:'Ubuntu Mono'; }"
-    "QPushButton:hover { background:#22272e; color:#e6edf3; }";
+    "QPushButton:hover { background:#eef1f6; color:#1e2a3a; }";
 
 static const QString STYLE_ACTIVE_ICON =
-    "QPushButton { background:#1f3349; color:#58a6ff; border:none; "
-    "border-left:2px solid #1f6feb; text-align:center; padding:10px 4px; "
-    "font-size:16px; font-family:'Ubuntu Mono'; }";
+    "QPushButton { background:#e0ecff; color:#6366f1; border:none; "
+    "border-left:3px solid #6366f1; text-align:center; padding:10px 4px; "
+    "font-size:16px; font-family:'Ubuntu Mono'; font-weight:600; }";
 
 static const QString STYLE_INACTIVE_ICON =
-    "QPushButton { background:transparent; color:#8b949e; border:none; "
+    "QPushButton { background:transparent; color:#5c6b7f; border:none; "
     "text-align:center; padding:10px 4px; font-size:16px; "
     "font-family:'Ubuntu Mono'; }"
-    "QPushButton:hover { background:#22272e; color:#e6edf3; }";
+    "QPushButton:hover { background:#eef1f6; color:#1e2a3a; }";
 
 Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
 {
