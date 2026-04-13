@@ -215,7 +215,8 @@ QVector<BwSample> HistoryDB::getLast24h(const QString &process)
 
     sqlite3 *db = reinterpret_cast<sqlite3 *>(m_db);
     sqlite3_stmt *stmt = nullptr;
-    sqlite3_prepare_v2(db, sql.toUtf8().constData(), -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(db, sql.toUtf8().constData(), -1, &stmt, nullptr) != SQLITE_OK || !stmt)
+        return r;
     sqlite3_bind_text(stmt, 1, process.toUtf8().constData(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 2, since);
 
@@ -249,7 +250,8 @@ QVector<DailyTotal> HistoryDB::getDailyTotals(const QString &process, int days)
 
     sqlite3 *db = reinterpret_cast<sqlite3 *>(m_db);
     sqlite3_stmt *stmt = nullptr;
-    sqlite3_prepare_v2(db, sql.toUtf8().constData(), -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(db, sql.toUtf8().constData(), -1, &stmt, nullptr) != SQLITE_OK || !stmt)
+        return r;
     sqlite3_bind_text(stmt, 1, process.toUtf8().constData(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, since.toUtf8().constData(), -1, SQLITE_TRANSIENT);
 
@@ -283,7 +285,8 @@ QVector<DailyTotal> HistoryDB::getAllDailyTotals(int days)
 
     sqlite3 *db = reinterpret_cast<sqlite3 *>(m_db);
     sqlite3_stmt *stmt = nullptr;
-    sqlite3_prepare_v2(db, sql.toUtf8().constData(), -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(db, sql.toUtf8().constData(), -1, &stmt, nullptr) != SQLITE_OK || !stmt)
+        return r;
     sqlite3_bind_text(stmt, 1, since.toUtf8().constData(), -1, SQLITE_TRANSIENT);
 
     while (sqlite3_step(stmt) == SQLITE_ROW)
@@ -311,7 +314,8 @@ QStringList HistoryDB::getProcessList()
         "SELECT DISTINCT process FROM bw_samples ORDER BY process ASC";
     sqlite3 *db = reinterpret_cast<sqlite3 *>(m_db);
     sqlite3_stmt *stmt = nullptr;
-    sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK || !stmt)
+        return r;
     while (sqlite3_step(stmt) == SQLITE_ROW)
         r << QString::fromUtf8(reinterpret_cast<const char *>(
             sqlite3_column_text(stmt, 0)));
