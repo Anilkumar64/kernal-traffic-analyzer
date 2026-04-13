@@ -46,7 +46,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     // Status bar
     m_statusLabel = new QLabel("Waiting for kernel module...", this);
     m_statusLabel->setStyleSheet(
-        "color:#334455;font-size:12px;padding:0 8px;"
+        "color:#9ba8b6;font-size:12px;padding:0 8px;"
         "font-family:'Ubuntu Mono';");
     statusBar()->addPermanentWidget(m_statusLabel);
     statusBar()->setSizeGripEnabled(false);
@@ -105,7 +105,7 @@ void MainWindow::buildLayout()
 
     auto *div = new QFrame(central);
     div->setFrameShape(QFrame::VLine);
-    div->setStyleSheet("background:#1c2530;max-width:1px;");
+    div->setStyleSheet("background:#e4e8ee;max-width:1px;");
     root->addWidget(div);
 
     m_stack = new QStackedWidget(central);
@@ -164,10 +164,10 @@ void MainWindow::buildMenuBar()
 {
     auto *fileMenu = menuBar()->addMenu("File");
     fileMenu->setStyleSheet(
-        "QMenu{background:#131920;border:1px solid #253040;"
-        "color:#dde8f5;font-family:'Ubuntu Mono';font-size:13px;}"
+        "QMenu{background:#ffffff;border:1px solid #d0d7e0;"
+        "color:#1e2a3a;font-family:'Ubuntu Mono';font-size:13px;}"
         "QMenu::item{padding:6px 20px;}"
-        "QMenu::item:selected{background:#163050;color:#5aabff;}");
+        "QMenu::item:selected{background:#e0ecff;color:#6366f1;}");
 
     auto *exportMenu = fileMenu->addMenu("Export");
     exportMenu->addAction("JSON Report...", this, &MainWindow::exportJson);
