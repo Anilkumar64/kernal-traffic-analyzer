@@ -44,15 +44,15 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
 
     auto *dot = new QLabel(m_logoWidget);
     dot->setFixedSize(10, 10);
-    dot->setStyleSheet("background:#1f6feb;border-radius:5px;");
+    dot->setStyleSheet("background:#6366f1;border-radius:5px;");
 
     auto *textCol = new QVBoxLayout();
     textCol->setSpacing(2);
     m_titleLabel = new QLabel("KTA", m_logoWidget);
     m_titleLabel->setStyleSheet(
-        "color:#e6edf3;font-size:15px;font-weight:600;letter-spacing:2px;");
+        "color:#1e2a3a;font-size:15px;font-weight:600;letter-spacing:2px;");
     m_subLabel = new QLabel("kernel traffic analyzer", m_logoWidget);
-    m_subLabel->setStyleSheet("color:#484f58;font-size:9px;");
+    m_subLabel->setStyleSheet("color:#9ba8b6;font-size:9px;");
     textCol->addWidget(m_titleLabel);
     textCol->addWidget(m_subLabel);
 
@@ -60,9 +60,9 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     m_btnCollapse->setObjectName("CollapseBtn");
     m_btnCollapse->setFixedSize(24, 24);
     m_btnCollapse->setStyleSheet(
-        "QPushButton{background:transparent;border:1px solid #30363d;"
-        "border-radius:4px;color:#484f58;font-size:11px;}"
-        "QPushButton:hover{color:#e6edf3;border-color:#444c56;}");
+        "QPushButton{background:transparent;border:1px solid #d0d7e0;"
+        "border-radius:4px;color:#9ba8b6;font-size:11px;}"
+        "QPushButton:hover{color:#1e2a3a;border-color:#b8c4d0;}");
     connect(m_btnCollapse, &QPushButton::clicked, this, &Sidebar::toggleCollapse);
 
     ll->addWidget(dot);
@@ -76,7 +76,7 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     {
         auto *f = new QFrame(this);
         f->setFrameShape(QFrame::HLine);
-        f->setStyleSheet("background:#30363d;max-height:1px;");
+        f->setStyleSheet("background:#e4e8ee;max-height:1px;");
         return f;
     };
     auto mkSec = [&](const QString &t)
@@ -84,7 +84,7 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
         auto *l = new QLabel(t, this);
         l->setObjectName("SectionTitle");
         l->setStyleSheet(
-            "color:#484f58;font-size:9px;font-weight:700;"
+            "color:#9ba8b6;font-size:9px;font-weight:700;"
             "letter-spacing:1.5px;padding:8px 14px 4px 14px;");
         return l;
     };
@@ -129,7 +129,7 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     m_anomalyBadge->setFixedSize(20, 20);
     m_anomalyBadge->setAlignment(Qt::AlignCenter);
     m_anomalyBadge->setStyleSheet(
-        "background:#2d1117;color:#f85149;border-radius:10px;"
+        "background:#fef2f2;color:#ef4444;border-radius:10px;"
         "font-size:10px;font-weight:600;");
     m_anomalyBadge->hide();
     aLayout->addWidget(m_anomalyBadge);
@@ -162,9 +162,9 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     sl->setContentsMargins(14, 0, 14, 0);
     auto *liveDot = new QLabel(statusW);
     liveDot->setFixedSize(8, 8);
-    liveDot->setStyleSheet("background:#3fb950;border-radius:4px;");
+    liveDot->setStyleSheet("background:#10b981;border-radius:4px;");
     m_liveLabel = new QLabel("Live  |  v6.0", statusW);
-    m_liveLabel->setStyleSheet("color:#3fb950;font-size:10px;");
+    m_liveLabel->setStyleSheet("color:#10b981;font-size:10px;");
     sl->addWidget(liveDot);
     sl->addSpacing(8);
     sl->addWidget(m_liveLabel);
