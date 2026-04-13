@@ -25,7 +25,7 @@ ProcBwGraph::ProcBwGraph(QWidget *parent) : QWidget(parent)
 {
     setFixedHeight(110);
     setMinimumWidth(300);
-    setStyleSheet("background:#ffffff;border-radius:4px;");
+    setStyleSheet("background:#1e1e1e;border-radius:4px;");
 }
 
 void ProcBwGraph::addSample(quint32 out, quint32 in)
@@ -57,9 +57,9 @@ void ProcBwGraph::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     QRect r = rect();
-    p.fillRect(r, QColor("#ffffff"));
+    p.fillRect(r, QColor("#252526"));
 
-    p.setPen(QPen(QColor("#e4e8ee"),1,Qt::DotLine));
+    p.setPen(QPen(QColor("#3e3e42"),1,Qt::DotLine));
     for (int i=1;i<4;++i) {
         int y = r.top()+r.height()*i/4;
         p.drawLine(r.left(),y,r.right(),y);
@@ -67,7 +67,7 @@ void ProcBwGraph::paintEvent(QPaintEvent *)
 
     if (m_out.isEmpty()) {
         QFont f("Ubuntu Mono"); f.setPixelSize(12);
-        p.setFont(f); p.setPen(QColor("#d0d7e0"));
+        p.setFont(f); p.setPen(QColor("#555555"));
         p.drawText(r,Qt::AlignCenter,"Collecting data...");
         return;
     }
@@ -108,7 +108,7 @@ void ProcBwGraph::paintEvent(QPaintEvent *)
         p.drawText(QRect(r.left()+6,r.top()+20,120,16),
                    Qt::AlignLeft,"IN  "+fmtRate(m_in.last()));
     }
-    p.setPen(QColor("#9ba8b6"));
+    p.setPen(QColor("#8a8a8a"));
     p.drawText(QRect(r.right()-100,r.top()+4,96,16),
                Qt::AlignRight,"peak "+fmtRate(m_peak));
 }
@@ -134,8 +134,8 @@ void ProcessDetailOverlay::buildLayout()
     m_card = new QWidget(this);
     m_card->setStyleSheet(
         "QWidget#OverlayCard{"
-        "background:#ffffff;"
-        "border:1px solid #d0d7e0;"
+        "background:#1e1e1e;"
+        "border:1px solid #555555;"
         "border-radius:12px;}");
     m_card->setObjectName("OverlayCard");
 
@@ -147,9 +147,9 @@ void ProcessDetailOverlay::buildLayout()
     auto *hdr = new QWidget(m_card);
     hdr->setFixedHeight(64);
     hdr->setStyleSheet(
-        "background:#f7f8fa;"
+        "background:#1e1e1e;"
         "border-radius:12px 12px 0 0;"
-        "border-bottom:1px solid #e4e8ee;");
+        "border-bottom:1px solid #555555;");
     auto *hl = new QHBoxLayout(hdr);
     hl->setContentsMargins(20,0,16,0);
 
@@ -159,26 +159,26 @@ void ProcessDetailOverlay::buildLayout()
     auto *nc = new QVBoxLayout(); nc->setSpacing(2);
     m_procName = new QLabel("", hdr);
     m_procName->setStyleSheet(
-        "color:#1e2a3a;font-size:17px;font-weight:700;"
+        "color:#cccccc;font-size:17px;font-weight:700;"
         "font-family:'Ubuntu Mono';background:transparent;");
     m_exePath = new QLabel("", hdr);
     m_exePath->setStyleSheet(
-        "color:#9ba8b6;font-size:11px;"
+        "color:#8a8a8a;font-size:11px;"
         "font-family:'Ubuntu Mono';background:transparent;");
     nc->addWidget(m_procName);
     nc->addWidget(m_exePath);
 
     m_pidLabel = new QLabel("", hdr);
     m_pidLabel->setStyleSheet(
-        "color:#5c6b7f;font-size:12px;"
+        "color:#8a8a8a;font-size:14px;"
         "font-family:'Ubuntu Mono';background:transparent;");
 
     auto *closeBtn = new QPushButton("✕", hdr);
     closeBtn->setFixedSize(32,32);
     closeBtn->setStyleSheet(
-        "QPushButton{background:#e4e8ee;border:none;border-radius:8px;"
-        "color:#5c6b7f;font-size:14px;}"
-        "QPushButton:hover{background:#ef4444;color:white;}");
+        "QPushButton{background:#3e3e42;border:none;border-radius:8px;"
+        "color:#8a8a8a;font-size:14px;}"
+        "QPushButton:hover{background:#ef4444;color:#cccccc;}");
     connect(closeBtn, &QPushButton::clicked, this, [this](){
         hide(); emit closed();
     });
@@ -193,17 +193,17 @@ void ProcessDetailOverlay::buildLayout()
     m_scroll = new QScrollArea(m_card);
     m_scroll->setWidgetResizable(true);
     m_scroll->setFrameShape(QFrame::NoFrame);
-    m_scroll->setStyleSheet("background:#ffffff;border:none;");
+    m_scroll->setStyleSheet("background:#1e1e1e;border:none;");
 
     auto *content = new QWidget(m_scroll);
-    content->setStyleSheet("background:#ffffff;");
+    content->setStyleSheet("background:#1e1e1e;");
     auto *cl = new QVBoxLayout(content);
     cl->setContentsMargins(20,16,20,20);
     cl->setSpacing(16);
 
     auto mkSec=[&](const QString&t){
         auto*l=new QLabel(t,content);
-        l->setStyleSheet("color:#9ba8b6;font-size:10px;font-weight:700;"
+        l->setStyleSheet("color:#8a8a8a;font-size:14px;font-weight:700;"
                          "letter-spacing:1.5px;background:transparent;");
         return l;
     };
@@ -215,7 +215,7 @@ void ProcessDetailOverlay::buildLayout()
         c->setMinimumWidth(110);
         auto*cv=new QVBoxLayout(c); cv->setContentsMargins(12,10,12,10); cv->setSpacing(4);
         auto*ll=new QLabel(lbl,c);
-        ll->setStyleSheet("color:#9ba8b6;font-size:10px;font-weight:700;"
+        ll->setStyleSheet("color:#8a8a8a;font-size:14px;font-weight:700;"
                           "letter-spacing:1px;background:transparent;");
         val=new QLabel("-",c);
         val->setStyleSheet(QString("color:%1;font-size:18px;font-weight:600;"
@@ -246,7 +246,7 @@ void ProcessDetailOverlay::buildLayout()
     m_connTable->setAlternatingRowColors(true);
     m_connTable->setShowGrid(false);
     m_connTable->verticalHeader()->setVisible(false);
-    m_connTable->verticalHeader()->setDefaultSectionSize(32);
+    m_connTable->verticalHeader()->setDefaultSectionSize(40);
     m_connTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_connTable->setColumnWidth(0,240);
     m_connTable->setColumnWidth(1,60);
@@ -279,7 +279,7 @@ void ProcessDetailOverlay::buildLayout()
     m_mapView = new QGraphicsView(m_mapScene,content);
     m_mapView->setFixedHeight(int(MH));
     m_mapView->setRenderHint(QPainter::Antialiasing);
-    m_mapView->setStyleSheet("border:1px solid #e4e8ee;border-radius:8px;"
+    m_mapView->setStyleSheet("border:1px solid #555555;border-radius:8px;"
                               "background:#080d13;");
     m_mapView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_mapView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -354,7 +354,7 @@ void ProcessDetailOverlay::drawMiniMap(
     sl->setPos(src.x()+7,src.y()-8); sl->setZValue(6);
 
     // Route arcs
-    static const QStringList COLS={"#6366f1","#10b981","#f59e0b",
+    static const QStringList COLS={"#6366f1","#10b981","#ce9178",
                                     "#8b5cf6","#ef4444","#6366f1"};
     int ci=0;
     QSet<QString> done;
@@ -468,10 +468,10 @@ void ProcessDetailOverlay::populateConnections(
         const TrafficEntry&e=mine[i];
         QString dom=(e.domain.isEmpty()||e.domain=="-")?e.destIp:e.domain;
         QColor sc = e.state==ConnState::Established?QColor("#10b981"):
-                    e.state==ConnState::UdpActive  ?QColor("#06b6d4"):
-                                                     QColor("#5c6b7f");
+                    e.state==ConnState::UdpActive  ?QColor("#3794ff"):
+                                                     QColor("#8a8a8a");
         m_connTable->setItem(i,0,item(dom,         QColor("#6366f1")));
-        m_connTable->setItem(i,1,item(e.protocol,  QColor("#5c6b7f")));
+        m_connTable->setItem(i,1,item(e.protocol,  QColor("#8a8a8a")));
         m_connTable->setItem(i,2,item(e.stateString(),sc));
         m_connTable->setItem(i,3,item(e.formatRate(e.rateOutBps),QColor("#6366f1")));
         m_connTable->setItem(i,4,item(e.formatRate(e.rateInBps), QColor("#10b981")));
@@ -499,12 +499,12 @@ void ProcessDetailOverlay::populateDns(const QVector<DnsEntry> &dns)
     for (int i=0;i<mine.size();++i) {
         const DnsEntry&d=mine[i];
         QColor ttlC = d.ttlRemaining>60?QColor("#10b981"):
-                      d.ttlRemaining>10?QColor("#f59e0b"):QColor("#ef4444");
+                      d.ttlRemaining>10?QColor("#ce9178"):QColor("#ef4444");
         QString ls=QDateTime::fromSecsSinceEpoch(d.lastSeen).toString("hh:mm:ss");
         m_dnsTable->setItem(i,0,item(d.domain,      QColor("#6366f1")));
-        m_dnsTable->setItem(i,1,item(d.ip,           QColor("#1e2a3a")));
+        m_dnsTable->setItem(i,1,item(d.ip,           QColor("#cccccc")));
         m_dnsTable->setItem(i,2,item(d.ttlString(),  ttlC));
-        m_dnsTable->setItem(i,3,item(ls,             QColor("#5c6b7f")));
+        m_dnsTable->setItem(i,3,item(ls,             QColor("#8a8a8a")));
     }
 }
 

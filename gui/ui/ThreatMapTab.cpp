@@ -23,14 +23,14 @@ ThreatMapTab::ThreatMapTab(QWidget *parent) : QWidget(parent)
     // Top bar
     auto *topBar = new QWidget(this);
     topBar->setObjectName("TopBar");
-    topBar->setFixedHeight(58);
+    topBar->setFixedHeight(64);
     auto *tl = new QHBoxLayout(topBar);
-    tl->setContentsMargins(20, 0, 20, 0);
+    tl->setContentsMargins(24, 0, 24, 0);
     auto *ttl = new QLabel("Network Threat Map", topBar);
-    ttl->setStyleSheet("color:#1e2a3a;font-size:15px;font-weight:600;"
+    ttl->setStyleSheet("color:#cccccc;font-size:17px;font-weight:600;"
                        "font-family:'Ubuntu Mono';");
     m_statusLabel = new QLabel("Scanning connections...", topBar);
-    m_statusLabel->setStyleSheet("color:#9ba8b6;font-size:12px;"
+    m_statusLabel->setStyleSheet("color:#8a8a8a;font-size:14px;"
                                  "font-family:'Ubuntu Mono';");
     tl->addWidget(ttl);
     tl->addSpacing(16);
@@ -40,7 +40,7 @@ ThreatMapTab::ThreatMapTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
+    div->setStyleSheet("background:#3e3e42;max-height:1px;");
     outer->addWidget(div);
 
     auto *split = new QSplitter(Qt::Vertical, this);
@@ -48,10 +48,10 @@ ThreatMapTab::ThreatMapTab(QWidget *parent) : QWidget(parent)
 
     // Map
     m_scene = new QGraphicsScene(0, 0, SW, SH, this);
-    m_scene->setBackgroundBrush(QBrush(QColor("#060b10")));
+    m_scene->setBackgroundBrush(QBrush(QColor("#1a1a1a")));
     m_view = new QGraphicsView(m_scene, split);
     m_view->setRenderHint(QPainter::Antialiasing);
-    m_view->setStyleSheet("background:#060b10;border:none;");
+    m_view->setStyleSheet("background:#1a1a1a;border:none;");
     m_view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_view->setDragMode(QGraphicsView::ScrollHandDrag);
@@ -64,7 +64,7 @@ ThreatMapTab::ThreatMapTab(QWidget *parent) : QWidget(parent)
     m_table->setAlternatingRowColors(true);
     m_table->setShowGrid(false);
     m_table->verticalHeader()->setVisible(false);
-    m_table->verticalHeader()->setDefaultSectionSize(32);
+    m_table->verticalHeader()->setDefaultSectionSize(40);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_table->setColumnWidth(0, 140);
     m_table->setColumnWidth(1, 120);
@@ -281,16 +281,16 @@ void ThreatMapTab::rebuildTable()
             auto*it=new QTableWidgetItem(t);
             it->setForeground(QBrush(c));
             it->setFlags(Qt::ItemIsEnabled|Qt::ItemIsSelectable);
-            it->setBackground(QBrush(QColor("#fef2f2")));
+            it->setBackground(QBrush(QColor("#2e1515")));
             return it; };
 
         QString ts = ti.lastSeen > 0 ? QDateTime::fromSecsSinceEpoch(ti.lastSeen).toString("hh:mm:ss") : "-";
 
         m_table->setItem(i, 0, item(ti.ip, QColor("#ef4444")));
-        m_table->setItem(i, 1, item(e.process, QColor("#1e2a3a")));
+        m_table->setItem(i, 1, item(e.process, QColor("#cccccc")));
         m_table->setItem(i, 2, item(ThreatIntel::instance().labelForLevel(ti.level), col));
         m_table->setItem(i, 3, item(QString::number(ti.score), col));
-        m_table->setItem(i, 4, item(ti.category, QColor("#5c6b7f")));
-        m_table->setItem(i, 5, item(ts, QColor("#9ba8b6")));
+        m_table->setItem(i, 4, item(ti.category, QColor("#8a8a8a")));
+        m_table->setItem(i, 5, item(ts, QColor("#8a8a8a")));
     }
 }

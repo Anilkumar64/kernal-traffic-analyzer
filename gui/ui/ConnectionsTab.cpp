@@ -20,7 +20,7 @@ DetailPanel::DetailPanel(QWidget *parent) : QWidget(parent)
 
     m_process = new QLabel("", this);
     m_process->setStyleSheet(
-        "color:#1e2a3a;font-size:13px;font-weight:600;font-family:Monospace;");
+        "color:#cccccc;font-size:15px;font-weight:600;font-family:Monospace;");
     layout->addWidget(m_process);
 
     auto *statsRow = new QHBoxLayout();
@@ -30,17 +30,17 @@ DetailPanel::DetailPanel(QWidget *parent) : QWidget(parent)
     {
         auto *card = new QWidget(this);
         card->setObjectName("StatCard");
-        card->setFixedHeight(58);
+        card->setFixedHeight(72);
         card->setMinimumWidth(110);
         auto *cl = new QVBoxLayout(card);
-        cl->setContentsMargins(12, 8, 12, 8);
+        cl->setContentsMargins(16, 10, 16, 10);
         cl->setSpacing(2);
         auto *lbl = new QLabel(label, card);
         lbl->setStyleSheet(
-            "color:#5c6b7f;font-size:10px;letter-spacing:1px;font-family:Monospace;");
+            "color:#8a8a8a;font-size:14px;letter-spacing:1px;font-family:Monospace;");
         val = new QLabel("-", card);
         val->setStyleSheet(
-            "color:#1e2a3a;font-size:17px;font-weight:600;font-family:Monospace;");
+            "color:#cccccc;font-size:22px;font-weight:600;font-family:Monospace;");
         cl->addWidget(lbl);
         cl->addWidget(val);
         statsRow->addWidget(card);
@@ -52,9 +52,9 @@ DetailPanel::DetailPanel(QWidget *parent) : QWidget(parent)
     makeCard("DURATION", m_statDuration);
 
     m_domain = new QLabel("", this);
-    m_domain->setStyleSheet("color:#6366f1;font-size:11px;font-family:Monospace;");
+    m_domain->setStyleSheet("color:#6366f1;font-size:13px;font-family:Monospace;");
     m_route = new QLabel("", this);
-    m_route->setStyleSheet("color:#5c6b7f;font-size:10px;font-family:Monospace;");
+    m_route->setStyleSheet("color:#8a8a8a;font-size:10px;font-family:Monospace;");
 
     auto *infoRow = new QHBoxLayout();
     infoRow->addWidget(m_domain);
@@ -104,16 +104,16 @@ ConnectionsTab::ConnectionsTab(QWidget *parent) : QWidget(parent)
     // Top bar
     auto *topBar = new QWidget(this);
     topBar->setObjectName("TopBar");
-    topBar->setFixedHeight(52);
+    topBar->setFixedHeight(64);
     auto *tl = new QHBoxLayout(topBar);
-    tl->setContentsMargins(16, 0, 16, 0);
+    tl->setContentsMargins(20, 0, 20, 0);
     tl->setSpacing(12);
 
     auto *titleLbl = new QLabel("Live Connections", topBar);
     titleLbl->setStyleSheet(
-        "color:#1e2a3a;font-size:14px;font-weight:600;font-family:Monospace;");
+        "color:#cccccc;font-size:16px;font-weight:600;font-family:Monospace;");
     m_countLabel = new QLabel("", topBar);
-    m_countLabel->setStyleSheet("color:#9ba8b6;font-size:11px;font-family:Monospace;");
+    m_countLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:Monospace;");
     tl->addWidget(titleLbl);
     tl->addWidget(m_countLabel);
     tl->addStretch();
@@ -137,7 +137,7 @@ ConnectionsTab::ConnectionsTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
+    div->setStyleSheet("background:#3e3e42;max-height:1px;");
     outerLayout->addWidget(div);
 
     // Splitter: table on top, detail panel below
@@ -160,7 +160,7 @@ ConnectionsTab::ConnectionsTab(QWidget *parent) : QWidget(parent)
     m_table->setShowGrid(false);
     m_table->setWordWrap(false);
     m_table->verticalHeader()->setVisible(false);
-    m_table->verticalHeader()->setDefaultSectionSize(34);
+    m_table->verticalHeader()->setDefaultSectionSize(48);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_table->horizontalHeader()->setStretchLastSection(false);
 
@@ -176,7 +176,7 @@ ConnectionsTab::ConnectionsTab(QWidget *parent) : QWidget(parent)
     m_table->setColumnWidth(TrafficModel::COL_DURATION, 80);
     m_table->setColumnWidth(TrafficModel::COL_PID, 55);
     m_table->sortByColumn(TrafficModel::COL_RATE_IN, Qt::DescendingOrder);
-    m_table->verticalHeader()->setDefaultSectionSize(42); // taller rows for sparkline
+    m_table->verticalHeader()->setDefaultSectionSize(48); // taller rows for sparkline
 
     // Install sparkline delegate on IN and OUT rate columns
     auto *sparkIn = new SparklineDelegate(m_table);

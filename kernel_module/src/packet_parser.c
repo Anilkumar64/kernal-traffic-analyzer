@@ -301,7 +301,8 @@ void parse_packet(struct sk_buff *skb, bool incoming)
             }
             else
             {
-                resolver_schedule(ino, sk, sock_file);
+                resolver_schedule(ino, sk,
+                                  (sk->sk_socket ? sk->sk_socket->file : NULL));
                 flow_cache_mark_negative(&key);
                 return;
             }

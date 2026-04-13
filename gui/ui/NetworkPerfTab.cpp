@@ -16,7 +16,7 @@
 LatencyGraph::LatencyGraph(QWidget *parent) : QWidget(parent)
 {
     setMinimumHeight(180);
-    setStyleSheet("background:#ffffff;");
+    setStyleSheet("background:#1e1e1e;");
 }
 
 void LatencyGraph::addSample(double latencyMs, bool ok)
@@ -66,14 +66,14 @@ void LatencyGraph::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     QRect r = rect();
-    p.fillRect(r, QColor("#ffffff"));
+    p.fillRect(r, QColor("#252526"));
 
     if (m_samples.isEmpty())
     {
         QFont f("Ubuntu Mono");
         f.setPixelSize(13);
         p.setFont(f);
-        p.setPen(QColor("#d0d7e0"));
+        p.setPen(QColor("#555555"));
         p.drawText(r, Qt::AlignCenter, "Pinging 8.8.8.8...");
         return;
     }
@@ -88,7 +88,7 @@ void LatencyGraph::paintEvent(QPaintEvent *)
     QRect gr = r.adjusted(50, 10, -10, -24);
 
     // Grid
-    p.setPen(QPen(QColor("#e4e8ee"), 1, Qt::DotLine));
+    p.setPen(QPen(QColor("#333333"), 1, Qt::DotLine));
     for (int i = 1; i < 4; ++i)
     {
         int y = gr.top() + gr.height() * i / 4;
@@ -96,11 +96,11 @@ void LatencyGraph::paintEvent(QPaintEvent *)
         QFont af("Ubuntu Mono");
         af.setPixelSize(9);
         p.setFont(af);
-        p.setPen(QColor("#9ba8b6"));
+        p.setPen(QColor("#8a8a8a"));
         p.drawText(QRect(gr.left() - 48, y - 8, 44, 16),
                    Qt::AlignRight | Qt::AlignVCenter,
                    QString("%1ms").arg(peak * (4 - i) / 4, 0, 'f', 0));
-        p.setPen(QPen(QColor("#e4e8ee"), 1, Qt::DotLine));
+        p.setPen(QPen(QColor("#333333"), 1, Qt::DotLine));
     }
 
     double xStep = gr.width() / double(qMax(1, MAX - 1));
@@ -158,7 +158,7 @@ void LatencyGraph::paintEvent(QPaintEvent *)
     QFont lf("Ubuntu Mono");
     lf.setPixelSize(9);
     p.setFont(lf);
-    p.setPen(QColor("#9ba8b6"));
+    p.setPen(QColor("#8a8a8a"));
     p.drawText(QRect(gr.left(), gr.bottom() + 2, 60, 14),
                Qt::AlignLeft, "-2min");
     p.drawText(QRect(gr.right() - 40, gr.bottom() + 2, 40, 14),
@@ -177,14 +177,14 @@ NetworkPerfTab::NetworkPerfTab(QWidget *parent) : QWidget(parent)
     // Top bar
     auto *topBar = new QWidget(this);
     topBar->setObjectName("TopBar");
-    topBar->setFixedHeight(58);
+    topBar->setFixedHeight(64);
     auto *tl = new QHBoxLayout(topBar);
-    tl->setContentsMargins(20, 0, 20, 0);
+    tl->setContentsMargins(24, 0, 24, 0);
     auto *ttl = new QLabel("Network Performance", topBar);
-    ttl->setStyleSheet("color:#1e2a3a;font-size:15px;font-weight:600;"
+    ttl->setStyleSheet("color:#cccccc;font-size:22px;font-weight:600;"
                        "font-family:'Ubuntu Mono';");
     m_statusLabel = new QLabel("Pinging 8.8.8.8...", topBar);
-    m_statusLabel->setStyleSheet("color:#9ba8b6;font-size:12px;"
+    m_statusLabel->setStyleSheet("color:#8a8a8a;font-size:14px;"
                                  "font-family:'Ubuntu Mono';");
     tl->addWidget(ttl);
     tl->addSpacing(16);
@@ -194,11 +194,11 @@ NetworkPerfTab::NetworkPerfTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
+    div->setStyleSheet("background:#3e3e42;max-height:1px;");
     outer->addWidget(div);
 
     auto *content = new QWidget(this);
-    content->setStyleSheet("background:#ffffff;");
+    content->setStyleSheet("background:#1e1e1e;");
     auto *cl = new QVBoxLayout(content);
     cl->setContentsMargins(20, 16, 20, 20);
     cl->setSpacing(16);
@@ -207,7 +207,7 @@ NetworkPerfTab::NetworkPerfTab(QWidget *parent) : QWidget(parent)
     auto *cardsRow = new QHBoxLayout();
     cardsRow->setSpacing(12);
     auto mkCard = [&](const QString &lbl, QLabel *&val,
-                      const QString &col = "#1e2a3a")
+                      const QString &col = "#cccccc")
     {
         auto *c = new QWidget(content);
         c->setObjectName("StatCard");
@@ -216,7 +216,7 @@ NetworkPerfTab::NetworkPerfTab(QWidget *parent) : QWidget(parent)
         cv->setContentsMargins(16, 12, 16, 12);
         cv->setSpacing(6);
         auto *ll = new QLabel(lbl, c);
-        ll->setStyleSheet("color:#9ba8b6;font-size:10px;font-weight:700;"
+        ll->setStyleSheet("color:#8a8a8a;font-size:14px;font-weight:700;"
                           "letter-spacing:1px;background:transparent;");
         val = new QLabel("-", c);
         val->setStyleSheet(
@@ -229,13 +229,13 @@ NetworkPerfTab::NetworkPerfTab(QWidget *parent) : QWidget(parent)
     };
     mkCard("LATENCY", m_latencyCard, "#6366f1");
     mkCard("PACKET LOSS", m_lossCard, "#10b981");
-    mkCard("JITTER", m_jitterCard, "#1e2a3a");
+    mkCard("JITTER", m_jitterCard, "#cccccc");
     mkCard("QUALITY", m_qualityCard, "#10b981");
     cl->addLayout(cardsRow);
 
     // Label
     auto *glbl = new QLabel("LATENCY OVER TIME  (8.8.8.8)", content);
-    glbl->setStyleSheet("color:#9ba8b6;font-size:10px;font-weight:700;"
+    glbl->setStyleSheet("color:#8a8a8a;font-size:14px;font-weight:700;"
                         "letter-spacing:1.5px;background:transparent;");
     cl->addWidget(glbl);
 
@@ -250,7 +250,6 @@ NetworkPerfTab::NetworkPerfTab(QWidget *parent) : QWidget(parent)
     m_timer->setInterval(1000);
     connect(m_timer, &QTimer::timeout, this, &NetworkPerfTab::startPing);
     m_timer->start();
-    startPing();
 }
 
 void NetworkPerfTab::startPing()
@@ -338,7 +337,7 @@ void NetworkPerfTab::updateCards()
                                                   : quality >= 40   ? "Fair"
                                                                     : "Poor";
     QString qualColor = quality >= 80 ? "#10b981" : quality >= 60 ? "#6366f1"
-                                                : quality >= 40   ? "#f59e0b"
+                                                : quality >= 40   ? "#ce9178"
                                                                   : "#ef4444";
 
     m_latencyCard->setText(avg > 0 ? QString("%1ms").arg(avg, 0, 'f', 1) : "-");
@@ -352,7 +351,7 @@ void NetworkPerfTab::updateCards()
     m_lossCard->setStyleSheet(
         QString("color:%1;font-size:22px;font-weight:600;"
                 "background:transparent;")
-            .arg(loss > 5 ? "#ef4444" : loss > 1 ? "#f59e0b"
+            .arg(loss > 5 ? "#ef4444" : loss > 1 ? "#ce9178"
                                                  : "#10b981"));
 
     m_statusLabel->setText(

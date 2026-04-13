@@ -14,16 +14,16 @@ ProcessesTab::ProcessesTab(QWidget *parent) : QWidget(parent)
     // Top bar
     auto *topBar = new QWidget(this);
     topBar->setObjectName("TopBar");
-    topBar->setFixedHeight(52);
+    topBar->setFixedHeight(60);
     auto *tl = new QHBoxLayout(topBar);
-    tl->setContentsMargins(16, 0, 16, 0);
+    tl->setContentsMargins(20, 0, 20, 0);
     tl->setSpacing(12);
 
     auto *titleLbl = new QLabel("Processes", topBar);
     titleLbl->setStyleSheet(
-        "color:#1e2a3a;font-size:14px;font-weight:600;font-family:Monospace;");
+        "color:#cccccc;font-size:16px;font-weight:600;font-family:Monospace;");
     m_countLabel = new QLabel("", topBar);
-    m_countLabel->setStyleSheet("color:#9ba8b6;font-size:11px;font-family:Monospace;");
+    m_countLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:Monospace;");
     tl->addWidget(titleLbl);
     tl->addWidget(m_countLabel);
     tl->addStretch();
@@ -40,7 +40,7 @@ ProcessesTab::ProcessesTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
+    div->setStyleSheet("background:#3e3e42;max-height:1px;");
     outerLayout->addWidget(div);
 
     // Model + proxy
@@ -60,7 +60,7 @@ ProcessesTab::ProcessesTab(QWidget *parent) : QWidget(parent)
     m_table->setShowGrid(false);
     m_table->setWordWrap(false);
     m_table->verticalHeader()->setVisible(false);
-    m_table->verticalHeader()->setDefaultSectionSize(34);
+    m_table->verticalHeader()->setDefaultSectionSize(48);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_table->horizontalHeader()->setStretchLastSection(false);
 

@@ -19,7 +19,7 @@ AlertPopup::AlertPopup(QWidget *parent) : QWidget(parent,
     root->setGeometry(0, 0, W, H);
     root->setStyleSheet(
         "QWidget {"
-        "  background-color: #f7f8fa;"
+        "  background-color: #252526;"
         "  border: 1px solid #ef4444;"
         "  border-radius: 12px;"
         "  font-family: 'Ubuntu Mono';"
@@ -50,12 +50,12 @@ AlertPopup::AlertPopup(QWidget *parent) : QWidget(parent,
 
     m_body = new QLabel(root);
     m_body->setStyleSheet(
-        "color:#1e2a3a;font-size:13px;"
+        "color:#cccccc;font-size:13px;"
         "border:none;background:transparent;");
 
     m_sub = new QLabel(root);
     m_sub->setStyleSheet(
-        "color:#5c6b7f;font-size:11px;"
+        "color:#8a8a8a;font-size:11px;"
         "border:none;background:transparent;");
 
     textCol->addWidget(m_title);
@@ -83,10 +83,10 @@ void AlertPopup::showAlert(const AnomalyEntry &a)
         typeColor = "#ff6060"; icon = "💥";
         m_title->setText("SYN FLOOD DETECTED");
     } else if (a.anomaly == "CONN_BURST") {
-        typeColor = "#f59e0b"; icon = "⚡";
+        typeColor = "#ce9178"; icon = "⚡";
         m_title->setText("CONNECTION BURST");
     } else if (a.anomaly == "HIGH_BW") {
-        typeColor = "#f59e0b"; icon = "📡";
+        typeColor = "#ce9178"; icon = "📡";
         m_title->setText("HIGH BANDWIDTH");
     } else {
         m_title->setText(a.anomaly);
@@ -125,10 +125,10 @@ void AlertPopup::showBgpAlert(const QString &domain,
     m_sub->setText(QString("%1 → %2").arg(expected, current));
 
     m_icon->setStyleSheet(
-        "color:#f59e0b;font-size:20px;"
-        "background:#fffbeb;border-radius:8px;border:none;");
+        "color:#ce9178;font-size:20px;"
+        "background:#2e1f15;border-radius:8px;border:none;");
     m_title->setStyleSheet(
-        "color:#f59e0b;font-size:13px;font-weight:700;"
+        "color:#ce9178;font-size:13px;font-weight:700;"
         "border:none;background:transparent;");
 
     animateIn();

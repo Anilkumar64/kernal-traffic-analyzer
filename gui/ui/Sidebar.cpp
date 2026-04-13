@@ -4,27 +4,88 @@
 #include <QFrame>
 #include <QPropertyAnimation>
 
+// ── Per-state button styles ───────────────────────────────────────────
+
 static const QString STYLE_ACTIVE =
-    "QPushButton { background:#e0ecff; color:#6366f1; border:none; "
-    "border-left:3px solid #6366f1; text-align:left; padding:10px 14px; "
-    "font-size:13px; font-family:'Ubuntu Mono'; font-weight:600; }";
+    "QPushButton {"
+    "  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+    "    stop:0 #052030, stop:1 #1e1e1e);"
+    "  color: #3794ff;"
+    "  border: none;"
+    "  border-left: 2px solid #3794ff;"
+    "  text-align: left;"
+    "  padding: 11px 16px 11px 14px;"
+    "  font-size: 14px;"
+    "  font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace;"
+    "  font-weight: 600;"
+    "}";
 
 static const QString STYLE_INACTIVE =
-    "QPushButton { background:transparent; color:#5c6b7f; border:none; "
-    "text-align:left; padding:10px 14px; font-size:13px; "
-    "font-family:'Ubuntu Mono'; }"
-    "QPushButton:hover { background:#eef1f6; color:#1e2a3a; }";
+    "QPushButton {"
+    "  background: transparent;"
+    "  color: #8a8a8a;"
+    "  border: none;"
+    "  text-align: left;"
+    "  padding: 11px 16px;"
+    "  font-size: 14px;"
+    "  font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace;"
+    "  font-weight: 400;"
+    "}"
+    "QPushButton:hover {"
+    "  background-color: #252526;"
+    "  color: #cccccc;"
+    "  border-left: 2px solid #555555;"
+    "  padding-left: 16px;"
+    "}";
 
 static const QString STYLE_ACTIVE_ICON =
-    "QPushButton { background:#e0ecff; color:#6366f1; border:none; "
-    "border-left:3px solid #6366f1; text-align:center; padding:10px 4px; "
-    "font-size:16px; font-family:'Ubuntu Mono'; font-weight:600; }";
+    "QPushButton {"
+    "  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+    "    stop:0 #052030, stop:1 #1e1e1e);"
+    "  color: #3794ff;"
+    "  border: none;"
+    "  border-left: 2px solid #3794ff;"
+    "  text-align: center;"
+    "  padding: 10px 4px;"
+    "  font-size: 15px;"
+    "  font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace;"
+    "}";
 
 static const QString STYLE_INACTIVE_ICON =
-    "QPushButton { background:transparent; color:#5c6b7f; border:none; "
-    "text-align:center; padding:10px 4px; font-size:16px; "
-    "font-family:'Ubuntu Mono'; }"
-    "QPushButton:hover { background:#eef1f6; color:#1e2a3a; }";
+    "QPushButton {"
+    "  background: transparent;"
+    "  color: #555555;"
+    "  border: none;"
+    "  text-align: center;"
+    "  padding: 10px 4px;"
+    "  font-size: 15px;"
+    "  font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace;"
+    "}"
+    "QPushButton:hover {"
+    "  background-color: #252526;"
+    "  color: #3794ff;"
+    "}";
+
+// ── Icons for each page ───────────────────────────────────────────────
+//    Using Unicode box-drawing / misc symbols that render in mono fonts
+
+static const char *ICONS[] = {
+    "⇄", // Connections
+    "▤", // Processes
+    "◈", // Route Map
+    "◎", // DNS Map
+    "⚠", // Anomalies
+    "⇅", // Bandwidth Load
+    "▦", // History
+    "◇", // Cost
+    "⏱", // Timeline
+    "⛨", // DNS Leaks
+    "⬡", // BGP
+    "◉", // Net Perf
+    "⊕", // Threat Map
+    "⛉", // Firewall
+    "◐", // Trust
+};
 
 Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
 {
@@ -35,48 +96,66 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    // ── Logo ─────────────────────────────────────────────────────
+    // ── Logo / header ─────────────────────────────────────────────
     m_logoWidget = new QWidget(this);
     m_logoWidget->setObjectName("SidebarLogo");
-    m_logoWidget->setFixedHeight(64);
-    auto *ll = new QHBoxLayout(m_logoWidget);
-    ll->setContentsMargins(12, 0, 8, 0);
+    m_logoWidget->setFixedHeight(70);
+    m_logoWidget->setStyleSheet("background:#252526; border-bottom:1px solid #333333;");
 
-    auto *dot = new QLabel(m_logoWidget);
-    dot->setFixedSize(10, 10);
-    dot->setStyleSheet("background:#6366f1;border-radius:5px;");
+    auto *ll = new QHBoxLayout(m_logoWidget);
+    ll->setContentsMargins(14, 0, 10, 0);
+    ll->setSpacing(0);
+
+    // Cyan square accent
+    auto *accent = new QLabel(m_logoWidget);
+    accent->setFixedSize(8, 26);
+    accent->setStyleSheet(
+        "background: qlineargradient(x1:0,y1:0,x2:0,y2:1,"
+        " stop:0 #3794ff, stop:1 #3794ff);"
+        "border-radius:2px;");
 
     auto *textCol = new QVBoxLayout();
-    textCol->setSpacing(2);
+    textCol->setSpacing(1);
+    textCol->setContentsMargins(10, 0, 0, 0);
+
     m_titleLabel = new QLabel("KTA", m_logoWidget);
     m_titleLabel->setStyleSheet(
-        "color:#1e2a3a;font-size:15px;font-weight:600;letter-spacing:2px;");
+        "color:#cccccc; font-size:16px; font-weight:700;"
+        "letter-spacing:3px; background:transparent;");
+
     m_subLabel = new QLabel("kernel traffic analyzer", m_logoWidget);
-    m_subLabel->setStyleSheet("color:#9ba8b6;font-size:9px;");
+    m_subLabel->setStyleSheet(
+        "color:#555555; font-size:11px; letter-spacing:0.5px;"
+        "background:transparent;");
+
     textCol->addWidget(m_titleLabel);
     textCol->addWidget(m_subLabel);
 
     m_btnCollapse = new QPushButton("◀", m_logoWidget);
     m_btnCollapse->setObjectName("CollapseBtn");
-    m_btnCollapse->setFixedSize(24, 24);
+    m_btnCollapse->setFixedSize(22, 22);
+    m_btnCollapse->setCursor(Qt::PointingHandCursor);
     m_btnCollapse->setStyleSheet(
-        "QPushButton{background:transparent;border:1px solid #d0d7e0;"
-        "border-radius:4px;color:#9ba8b6;font-size:11px;}"
-        "QPushButton:hover{color:#1e2a3a;border-color:#b8c4d0;}");
+        "QPushButton{"
+        "  background:transparent; border:1px solid #333333;"
+        "  border-radius:4px; color:#555555; font-size:10px;"
+        "}"
+        "QPushButton:hover{"
+        "  color:#3794ff; border-color:#3794ff;"
+        "}");
     connect(m_btnCollapse, &QPushButton::clicked, this, &Sidebar::toggleCollapse);
 
-    ll->addWidget(dot);
-    ll->addSpacing(8);
-    ll->addLayout(textCol);
-    ll->addStretch();
+    ll->addWidget(accent);
+    ll->addLayout(textCol, 1);
     ll->addWidget(m_btnCollapse);
     layout->addWidget(m_logoWidget);
 
+    // ── Helpers ───────────────────────────────────────────────────
     auto mkDiv = [&]()
     {
         auto *f = new QFrame(this);
         f->setFrameShape(QFrame::HLine);
-        f->setStyleSheet("background:#e4e8ee;max-height:1px;");
+        f->setStyleSheet("background:#333333; max-height:1px; border:none;");
         return f;
     };
     auto mkSec = [&](const QString &t)
@@ -84,8 +163,9 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
         auto *l = new QLabel(t, this);
         l->setObjectName("SectionTitle");
         l->setStyleSheet(
-            "color:#9ba8b6;font-size:9px;font-weight:700;"
-            "letter-spacing:1.5px;padding:8px 14px 4px 14px;");
+            "color:#555555; font-size:11px; font-weight:700;"
+            "letter-spacing:2px; padding:10px 16px 3px 16px;"
+            "background:transparent;");
         return l;
     };
 
@@ -93,13 +173,13 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     layout->addWidget(mkDiv());
     layout->addWidget(mkSec("MONITOR"));
 
-    m_btnConnections = makeNavButton("Connections", "⬡", PAGE_CONNECTIONS);
-    m_btnProcesses = makeNavButton("Processes", "⬡", PAGE_PROCESSES);
-    m_btnRouteMap = makeNavButton("Route Map", "⬡", PAGE_ROUTEMAP);
-    m_btnLoadBalancer = makeNavButton("Bandwidth Load", "⬡", PAGE_LOADBALANCER);
-    m_btnTimeline = makeNavButton("Timeline", "⬡", PAGE_TIMELINE);
-    m_btnHistory = makeNavButton("History", "⬡", PAGE_HISTORY);
-    m_btnNetworkPerf = makeNavButton("Net Perf", "⬡", PAGE_NETWORKPERF);
+    m_btnConnections = makeNavButton("Connections", ICONS[0], PAGE_CONNECTIONS);
+    m_btnProcesses = makeNavButton("Processes", ICONS[1], PAGE_PROCESSES);
+    m_btnRouteMap = makeNavButton("Route Map", ICONS[2], PAGE_ROUTEMAP);
+    m_btnLoadBalancer = makeNavButton("Bandwidth Load", ICONS[5], PAGE_LOADBALANCER);
+    m_btnTimeline = makeNavButton("Timeline", ICONS[8], PAGE_TIMELINE);
+    m_btnHistory = makeNavButton("History", ICONS[6], PAGE_HISTORY);
+    m_btnNetworkPerf = makeNavButton("Net Perf", ICONS[11], PAGE_NETWORKPERF);
 
     layout->addWidget(m_btnConnections);
     layout->addWidget(m_btnProcesses);
@@ -113,24 +193,27 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     layout->addWidget(mkDiv());
     layout->addWidget(mkSec("INTELLIGENCE"));
 
-    m_btnDns = makeNavButton("DNS Map", "⬡", PAGE_DNS);
-    m_btnDnsLeak = makeNavButton("DNS Leaks", "⬡", PAGE_DNSLEAK);
-    m_btnBgp = makeNavButton("BGP Monitor", "⬡", PAGE_BGP);
-    m_btnThreatMap = makeNavButton("Threat Map", "⬡", PAGE_THREATMAP);
+    m_btnDns = makeNavButton("DNS Map", ICONS[3], PAGE_DNS);
+    m_btnDnsLeak = makeNavButton("DNS Leaks", ICONS[9], PAGE_DNSLEAK);
+    m_btnBgp = makeNavButton("BGP Monitor", ICONS[10], PAGE_BGP);
+    m_btnThreatMap = makeNavButton("Threat Map", ICONS[12], PAGE_THREATMAP);
 
-    // Anomaly row with badge
-    m_btnAnomalies = makeNavButton("Anomalies", "⬡", PAGE_ANOMALIES);
+    // Anomaly button with alert badge
+    m_btnAnomalies = makeNavButton("Anomalies", ICONS[4], PAGE_ANOMALIES);
     auto *aRow = new QWidget(this);
+    aRow->setStyleSheet("background:transparent;");
     auto *aLayout = new QHBoxLayout(aRow);
     aLayout->setContentsMargins(0, 0, 8, 0);
     aLayout->setSpacing(0);
     aLayout->addWidget(m_btnAnomalies);
+
     m_anomalyBadge = new QLabel(aRow);
-    m_anomalyBadge->setFixedSize(20, 20);
+    m_anomalyBadge->setFixedSize(18, 18);
     m_anomalyBadge->setAlignment(Qt::AlignCenter);
     m_anomalyBadge->setStyleSheet(
-        "background:#fef2f2;color:#ef4444;border-radius:10px;"
-        "font-size:10px;font-weight:600;");
+        "background:#f44747; color:#ffffff;"
+        "border-radius:10px; border:none;"
+        "font-size:11px; font-weight:700;");
     m_anomalyBadge->hide();
     aLayout->addWidget(m_anomalyBadge);
 
@@ -144,9 +227,9 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     layout->addWidget(mkDiv());
     layout->addWidget(mkSec("CONTROL"));
 
-    m_btnFirewall = makeNavButton("Firewall", "⬡", PAGE_FIREWALL);
-    m_btnTrust = makeNavButton("Trust", "⬡", PAGE_TRUST);
-    m_btnCost = makeNavButton("Data Cost", "⬡", PAGE_COST);
+    m_btnFirewall = makeNavButton("Firewall", ICONS[13], PAGE_FIREWALL);
+    m_btnTrust = makeNavButton("Trust", ICONS[14], PAGE_TRUST);
+    m_btnCost = makeNavButton("Data Cost", ICONS[7], PAGE_COST);
 
     layout->addWidget(m_btnFirewall);
     layout->addWidget(m_btnTrust);
@@ -155,18 +238,24 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     layout->addStretch();
     layout->addWidget(mkDiv());
 
-    // ── Live status ───────────────────────────────────────────────
+    // ── Live status footer ────────────────────────────────────────
     auto *statusW = new QWidget(this);
-    statusW->setFixedHeight(44);
+    statusW->setFixedHeight(48);
+    statusW->setStyleSheet("background:#252526;");
     auto *sl = new QHBoxLayout(statusW);
     sl->setContentsMargins(14, 0, 14, 0);
+    sl->setSpacing(8);
+
     auto *liveDot = new QLabel(statusW);
-    liveDot->setFixedSize(8, 8);
-    liveDot->setStyleSheet("background:#10b981;border-radius:4px;");
-    m_liveLabel = new QLabel("Live  |  v6.0", statusW);
-    m_liveLabel->setStyleSheet("color:#10b981;font-size:10px;");
+    liveDot->setFixedSize(6, 6);
+    liveDot->setStyleSheet("background:#4ec9b0; border-radius:4px;");
+
+    m_liveLabel = new QLabel("LIVE  ·  v6.0", statusW);
+    m_liveLabel->setStyleSheet(
+        "color:#4ec9b0; font-size:13px; letter-spacing:1px;"
+        "background:transparent;");
+
     sl->addWidget(liveDot);
-    sl->addSpacing(8);
     sl->addWidget(m_liveLabel);
     sl->addStretch();
     layout->addWidget(statusW);
@@ -174,15 +263,22 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     setActivePage(PAGE_CONNECTIONS);
 }
 
+// ── makeNavButton ─────────────────────────────────────────────────────
+
 QPushButton *Sidebar::makeNavButton(const QString &label,
-                                    const QString & /*icon*/,
+                                    const QString &icon,
                                     Page page)
 {
-    auto *btn = new QPushButton(label, this);
-    btn->setFixedHeight(38);
+    auto *btn = new QPushButton(this);
+    btn->setFixedHeight(40);
     btn->setCursor(Qt::PointingHandCursor);
     btn->setProperty("label", label);
+    btn->setProperty("icon", icon);
+
+    // Show "  icon  label" in expanded mode
+    btn->setText(QString("  %1  %2").arg(icon, label));
     btn->setStyleSheet(STYLE_INACTIVE);
+
     connect(btn, &QPushButton::clicked, this, [this, page]()
             {
         setActivePage(page);
@@ -190,12 +286,16 @@ QPushButton *Sidebar::makeNavButton(const QString &label,
     return btn;
 }
 
+// ── setActive ─────────────────────────────────────────────────────────
+
 void Sidebar::setActive(QPushButton *btn, bool active)
 {
     btn->setStyleSheet(active
                            ? (m_collapsed ? STYLE_ACTIVE_ICON : STYLE_ACTIVE)
                            : (m_collapsed ? STYLE_INACTIVE_ICON : STYLE_INACTIVE));
 }
+
+// ── setActivePage ─────────────────────────────────────────────────────
 
 void Sidebar::setActivePage(Page page)
 {
@@ -217,6 +317,8 @@ void Sidebar::setActivePage(Page page)
     setActive(m_btnTrust, page == PAGE_TRUST);
 }
 
+// ── toggleCollapse ────────────────────────────────────────────────────
+
 void Sidebar::toggleCollapse()
 {
     m_collapsed = !m_collapsed;
@@ -226,13 +328,13 @@ void Sidebar::toggleCollapse()
 void Sidebar::applyCollapsed(bool collapsed)
 {
     auto *anim = new QPropertyAnimation(this, "minimumWidth");
-    anim->setDuration(180);
+    anim->setDuration(160);
     anim->setStartValue(width());
     anim->setEndValue(collapsed ? COLLAPSED_W : EXPANDED_W);
     anim->start(QAbstractAnimation::DeleteWhenStopped);
 
     auto *anim2 = new QPropertyAnimation(this, "maximumWidth");
-    anim2->setDuration(180);
+    anim2->setDuration(160);
     anim2->setStartValue(width());
     anim2->setEndValue(collapsed ? COLLAPSED_W : EXPANDED_W);
     anim2->start(QAbstractAnimation::DeleteWhenStopped);
@@ -240,41 +342,47 @@ void Sidebar::applyCollapsed(bool collapsed)
     m_titleLabel->setVisible(!collapsed);
     m_subLabel->setVisible(!collapsed);
     m_liveLabel->setVisible(!collapsed);
-    m_anomalyBadge->setVisible(!collapsed && !m_anomalyBadge->text().isEmpty());
     m_btnCollapse->setText(collapsed ? "▶" : "◀");
+    m_anomalyBadge->setVisible(!collapsed && !m_anomalyBadge->text().isEmpty());
 
-    struct
+    struct BtnInfo
     {
         QPushButton *btn;
         const char *label;
+        const char *icon;
         Page page;
     } buttons[] = {
-        {m_btnConnections, "Connections", PAGE_CONNECTIONS},
-        {m_btnProcesses, "Processes", PAGE_PROCESSES},
-        {m_btnRouteMap, "Route Map", PAGE_ROUTEMAP},
-        {m_btnLoadBalancer, "Bandwidth Load", PAGE_LOADBALANCER},
-        {m_btnTimeline, "Timeline", PAGE_TIMELINE},
-        {m_btnHistory, "History", PAGE_HISTORY},
-        {m_btnNetworkPerf, "Net Perf", PAGE_NETWORKPERF},
-        {m_btnDns, "DNS Map", PAGE_DNS},
-        {m_btnAnomalies, "Anomalies", PAGE_ANOMALIES},
-        {m_btnDnsLeak, "DNS Leaks", PAGE_DNSLEAK},
-        {m_btnBgp, "BGP Monitor", PAGE_BGP},
-        {m_btnThreatMap, "Threat Map", PAGE_THREATMAP},
-        {m_btnFirewall, "Firewall", PAGE_FIREWALL},
-        {m_btnTrust, "Trust", PAGE_TRUST},
-        {m_btnCost, "Data Cost", PAGE_COST},
+        {m_btnConnections, "Connections", ICONS[0], PAGE_CONNECTIONS},
+        {m_btnProcesses, "Processes", ICONS[1], PAGE_PROCESSES},
+        {m_btnRouteMap, "Route Map", ICONS[2], PAGE_ROUTEMAP},
+        {m_btnLoadBalancer, "Bandwidth Load", ICONS[5], PAGE_LOADBALANCER},
+        {m_btnTimeline, "Timeline", ICONS[8], PAGE_TIMELINE},
+        {m_btnHistory, "History", ICONS[6], PAGE_HISTORY},
+        {m_btnNetworkPerf, "Net Perf", ICONS[11], PAGE_NETWORKPERF},
+        {m_btnDns, "DNS Map", ICONS[3], PAGE_DNS},
+        {m_btnAnomalies, "Anomalies", ICONS[4], PAGE_ANOMALIES},
+        {m_btnDnsLeak, "DNS Leaks", ICONS[9], PAGE_DNSLEAK},
+        {m_btnBgp, "BGP Monitor", ICONS[10], PAGE_BGP},
+        {m_btnThreatMap, "Threat Map", ICONS[12], PAGE_THREATMAP},
+        {m_btnFirewall, "Firewall", ICONS[13], PAGE_FIREWALL},
+        {m_btnTrust, "Trust", ICONS[14], PAGE_TRUST},
+        {m_btnCost, "Data Cost", ICONS[7], PAGE_COST},
     };
 
     for (auto &b : buttons)
     {
-        b.btn->setText(collapsed ? "●" : b.label);
+        if (collapsed)
+            b.btn->setText(QString("  %1").arg(b.icon));
+        else
+            b.btn->setText(QString("  %1  %2").arg(b.icon, b.label));
         setActive(b.btn, m_activePage == b.page);
     }
 
     for (auto *lbl : findChildren<QLabel *>("SectionTitle"))
         lbl->setVisible(!collapsed);
 }
+
+// ── setAnomalyCount ───────────────────────────────────────────────────
 
 void Sidebar::setAnomalyCount(int count)
 {

@@ -122,8 +122,6 @@ void BgpMonitor::updateRoute(const QString &ip,
     // New fingerprint — check if it's suspicious
     if (!isLearning() && !df.prints.isEmpty())
     {
-        if (df.prints.size() < 1)
-            goto add_fp; // safety guard
         // Find most common fingerprint
         const RouteFingerprint &common = *std::max_element(
             df.prints.begin(), df.prints.end(),
@@ -153,8 +151,7 @@ void BgpMonitor::updateRoute(const QString &ip,
         }
     }
 
-// Add new fingerprint
-add_fp:
+    // Add new fingerprint
     df.prints.append(newFp);
     if (df.prints.size() > 20)
         df.prints.removeFirst();

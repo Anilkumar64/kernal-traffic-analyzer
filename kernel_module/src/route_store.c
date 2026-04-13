@@ -164,15 +164,41 @@ static const char *next_field(const char *p, char *out, size_t outsz)
  *   HOP <n> <ip> <rtt_us> <host> <city> <country> <cc> \
  *       <lat_e6> <lon_e6> <asn> <org>
  */
+/*
+ * route_store_write — parse DEST / STATUS / HOP lines from the daemon.
+ *
+ * The daemon (ta_route_daemon.py) writes results line by line.  Each
+ * line arrives as a separate write() syscall so we cannot use a local
+ * `cur` pointer — it would be NULL on every call except the one that
+ * contains "DEST".  Instead we persist the current IP in the module-
+ * level `pending_write_ip` variable and look up the entry fresh on
+ * every STATUS/HOP call.
+ *
+ * Protocol:
+ *   DEST <ip>
+ *   STATUS DONE|FAILED|RUNNING
+ *   HOP <n> <ip> <rtt_us> <host> <city> <country> <cc> \
+ *       <lat_e6> <lon_e6> <asn> <org>
+ *
+ * Stack-frame note: `line` and `fld` are declared static to keep the
+ * frame well under the 1024-byte kernel limit (-Wframe-larger-than).
+ * This is safe because procfs write() is serialised by the single-open
+ * file and we never sleep or re-enter this function concurrently.
+ */
 int route_store_write(const char *buf, size_t len)
 {
     const char *p = buf;
     const char *end = buf + len;
     u64 now = ktime_get_real_seconds();
 
+    /* Large buffers in BSS, not on the stack. */
+    static char line[513];
+    static char fld[128];
+
     while (p < end)
     {
-        /* Slice one line */
+
+        /* ---- slice one line ---- */
         const char *eol = p;
         while (eol < end && *eol != '\n')
             eol++;
@@ -186,14 +212,14 @@ int route_store_write(const char *buf, size_t len)
         if (llen > 512)
             llen = 512;
 
-        char line[513];
         memcpy(line, p, llen);
         line[llen] = '\0';
         p = eol + 1;
 
         /* Strip trailing whitespace / CR */
         while (llen > 0 &&
-               (line[llen - 1] == ' ' || line[llen - 1] == '\t' ||
+               (line[llen - 1] == ' ' ||
+                line[llen - 1] == '\t' ||
                 line[llen - 1] == '\r'))
             line[--llen] = '\0';
 
@@ -209,7 +235,6 @@ int route_store_write(const char *buf, size_t len)
             if (in4_pton(line + 5, -1, (u8 *)&ip, -1, &ep) != 1)
                 continue;
 
-            /* Ensure entry exists */
             spin_lock(&route_lock);
             if (!__find_entry(ip))
             {
@@ -224,11 +249,11 @@ int route_store_write(const char *buf, size_t len)
             }
             spin_unlock(&route_lock);
 
-            /* Persist across subsequent write() calls */
             pending_write_ip = ip;
             continue;
         }
 
+        /* ---- STATUS DONE|FAILED|RUNNING ---- */
         /* ---- STATUS DONE|FAILED|RUNNING ---- */
         if (strncmp(line, "STATUS ", 7) == 0 && pending_write_ip)
         {
@@ -252,14 +277,29 @@ int route_store_write(const char *buf, size_t len)
                     e->status = status;
                     e->last_updated = now;
 
-                    /* Phase 6: emit netlink when route is complete */
                     if (status == ROUTE_STATUS_DONE)
                     {
+                        /* Heap-allocate snap — route_entry is too large for
+                         * the stack (contains MAX_HOPS route_hop structs). */
+                        struct route_entry *snap = kmalloc(sizeof(*snap), GFP_ATOMIC);
+                        if (snap)
+                        {
+                            e = __find_entry(pending_write_ip);
+                            if (e)
+                                *snap = *e;
+                            else
+                            {
+                                kfree(snap);
+                                snap = NULL;
+                            }
+                        }
                         spin_unlock(&route_lock);
+                        if (snap)
+                        {
+                            ta_nl_send_route(snap);
+                            kfree(snap);
+                        }
                         spin_lock(&route_lock);
-                        e = __find_entry(pending_write_ip);
-                        if (e)
-                            ta_nl_send_route(e);
                     }
                 }
             }
@@ -271,7 +311,6 @@ int route_store_write(const char *buf, size_t len)
                     <lat_e6> <lon_e6> <asn> <org> ---- */
         if (strncmp(line, "HOP ", 4) == 0 && pending_write_ip)
         {
-            char fld[128];
             const char *fp = line + 4;
             struct route_hop hop;
             memset(&hop, 0, sizeof(hop));

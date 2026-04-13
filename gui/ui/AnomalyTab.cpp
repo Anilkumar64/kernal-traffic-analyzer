@@ -14,12 +14,12 @@ AnomalyTab::AnomalyTab(QWidget *parent) : QWidget(parent)
     // Top bar
     auto *topBar = new QWidget(this);
     topBar->setObjectName("TopBar");
-    topBar->setFixedHeight(52);
+    topBar->setFixedHeight(60);
     auto *tl = new QHBoxLayout(topBar);
-    tl->setContentsMargins(16, 0, 16, 0);
+    tl->setContentsMargins(20, 0, 20, 0);
     auto *title = new QLabel("Anomaly Monitor", topBar);
     title->setStyleSheet(
-        "color:#1e2a3a;font-size:14px;font-weight:600;font-family:'Ubuntu Mono';");
+        "color:#cccccc;font-size:16px;font-weight:600;font-family:'Ubuntu Mono';");
     m_countLabel = new QLabel("", topBar);
     m_countLabel->setStyleSheet("color:#ef4444;font-size:11px;");
     tl->addWidget(title);
@@ -29,13 +29,13 @@ AnomalyTab::AnomalyTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
+    div->setStyleSheet("background:#3e3e42;max-height:1px;");
     outer->addWidget(div);
 
     // No data label
     m_noDataLabel = new QLabel("No anomalies detected", this);
     m_noDataLabel->setAlignment(Qt::AlignCenter);
-    m_noDataLabel->setStyleSheet("color:#9ba8b6;font-size:16px;font-family:'Ubuntu Mono';");
+    m_noDataLabel->setStyleSheet("color:#8a8a8a;font-size:16px;font-family:'Ubuntu Mono';");
 
     // Table
     m_table = new QTableWidget(0, 8, this);
@@ -49,7 +49,7 @@ AnomalyTab::AnomalyTab(QWidget *parent) : QWidget(parent)
     m_table->setAlternatingRowColors(true);
     m_table->setShowGrid(false);
     m_table->verticalHeader()->setVisible(false);
-    m_table->verticalHeader()->setDefaultSectionSize(36);
+    m_table->verticalHeader()->setDefaultSectionSize(44);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_table->horizontalHeader()->setStretchLastSection(false);
     m_table->setColumnWidth(0, 120);
@@ -87,7 +87,7 @@ void AnomalyTab::updateData(const QVector<AnomalyEntry> &entries)
         const AnomalyEntry &e = entries[i];
 
         auto makeItem = [](const QString &text,
-                           const QColor &color = QColor("#1e2a3a"),
+                           const QColor &color = QColor("#cccccc"),
                            Qt::Alignment align = Qt::AlignLeft | Qt::AlignVCenter) {
             auto *item = new QTableWidgetItem(text);
             item->setForeground(QBrush(color));
@@ -100,30 +100,30 @@ void AnomalyTab::updateData(const QVector<AnomalyEntry> &entries)
         QColor anomColor = QColor("#ef4444");
         if (e.anomaly == "PORT_SCAN") anomColor = QColor("#ef4444");
         else if (e.anomaly == "SYN_FLOOD") anomColor = QColor("#ef4444");
-        else if (e.anomaly == "HIGH_BW")   anomColor = QColor("#f59e0b");
+        else if (e.anomaly == "HIGH_BW")   anomColor = QColor("#ce9178");
 
-        m_table->setItem(i, 0, makeItem(e.process, QColor("#1e2a3a")));
-        m_table->setItem(i, 1, makeItem(e.exeShort(), QColor("#5c6b7f")));
+        m_table->setItem(i, 0, makeItem(e.process, QColor("#cccccc")));
+        m_table->setItem(i, 1, makeItem(e.exeShort(), QColor("#8a8a8a")));
         m_table->setItem(i, 2, makeItem(e.anomaly, anomColor));
         m_table->setItem(i, 3, makeItem(
-            QString::number(e.newConnsLastSec), QColor("#1e2a3a"),
+            QString::number(e.newConnsLastSec), QColor("#cccccc"),
             Qt::AlignRight | Qt::AlignVCenter));
         m_table->setItem(i, 4, makeItem(
-            QString::number(e.uniquePortsLastSec), QColor("#1e2a3a"),
+            QString::number(e.uniquePortsLastSec), QColor("#cccccc"),
             Qt::AlignRight | Qt::AlignVCenter));
         m_table->setItem(i, 5, makeItem(
-            QString::number(e.totalConns), QColor("#1e2a3a"),
+            QString::number(e.totalConns), QColor("#cccccc"),
             Qt::AlignRight | Qt::AlignVCenter));
         m_table->setItem(i, 6, makeItem(
-            e.formatRate(e.rateOutBps), QColor("#1e2a3a"),
+            e.formatRate(e.rateOutBps), QColor("#cccccc"),
             Qt::AlignRight | Qt::AlignVCenter));
         m_table->setItem(i, 7, makeItem(
-            e.formatRate(e.rateInBps), QColor("#1e2a3a"),
+            e.formatRate(e.rateInBps), QColor("#cccccc"),
             Qt::AlignRight | Qt::AlignVCenter));
 
         // Highlight entire row red background
         for (int col = 0; col < 8; ++col)
             if (m_table->item(i, col))
-                m_table->item(i, col)->setBackground(QBrush(QColor("#fef2f2")));
+                m_table->item(i, col)->setBackground(QBrush(QColor("#2e1515")));
     }
 }

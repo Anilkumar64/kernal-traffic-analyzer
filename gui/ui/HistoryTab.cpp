@@ -51,12 +51,12 @@ void BwGraph::paintEvent(QPaintEvent *)
     p.setRenderHint(QPainter::Antialiasing);
     QRect r = rect();
 
-    p.fillRect(r, QColor("#ffffff"));
+    p.fillRect(r, QColor("#252526"));
 
     // Title
     QFont tf("Ubuntu Mono"); tf.setPixelSize(11); tf.setWeight(QFont::Bold);
     p.setFont(tf);
-    p.setPen(QColor("#9ba8b6"));
+    p.setPen(QColor("#8a8a8a"));
     p.drawText(QRect(r.left()+8, r.top()+4, 300, 16),
                Qt::AlignLeft, m_title.toUpper());
 
@@ -66,7 +66,7 @@ void BwGraph::paintEvent(QPaintEvent *)
     if (!hasData || m_process.isEmpty()) {
         QFont nf("Ubuntu Mono"); nf.setPixelSize(13);
         p.setFont(nf);
-        p.setPen(QColor("#d0d7e0"));
+        p.setPen(QColor("#3e3e42"));
         p.drawText(r, Qt::AlignCenter,
                    "No history yet — data collects over time");
         return;
@@ -105,17 +105,17 @@ void BwGraph::drawGraph(QPainter &p, const QRect &r,
         peak = qMax(peak, qMax(s.outBps, s.inBps));
 
     // Grid
-    p.setPen(QPen(QColor("#e4e8ee"), 1, Qt::DotLine));
+    p.setPen(QPen(QColor("#3e3e42"), 1, Qt::DotLine));
     for (int i = 1; i < 4; ++i) {
         int y = r.top() + r.height() * i / 4;
         p.drawLine(r.left(), y, r.right(), y);
-        p.setPen(QColor("#9ba8b6"));
+        p.setPen(QColor("#8a8a8a"));
         QFont af("Ubuntu Mono"); af.setPixelSize(9);
         p.setFont(af);
         p.drawText(QRect(r.left()-48, y-8, 44, 16),
                    Qt::AlignRight|Qt::AlignVCenter,
                    formatRate(peak * (4-i) / 4));
-        p.setPen(QPen(QColor("#e4e8ee"), 1, Qt::DotLine));
+        p.setPen(QPen(QColor("#3e3e42"), 1, Qt::DotLine));
     }
 
     double xStep = (samples.size() > 1) ?
@@ -149,7 +149,7 @@ void BwGraph::drawGraph(QPainter &p, const QRect &r,
     int step = qMax(1, samples.size() / 8);
     QFont lf("Ubuntu Mono"); lf.setPixelSize(9);
     p.setFont(lf);
-    p.setPen(QColor("#9ba8b6"));
+    p.setPen(QColor("#8a8a8a"));
     for (int i = 0; i < labels.size(); i += step) {
         double x = r.left() + i * xStep;
         p.drawText(QRectF(x-20, r.bottom()+2, 40, 12),
@@ -180,7 +180,7 @@ void BwGraph::drawBarChart(QPainter &p, const QRect &r,
     double gap  = double(r.width()) / n;
 
     // Grid
-    p.setPen(QPen(QColor("#e4e8ee"), 1, Qt::DotLine));
+    p.setPen(QPen(QColor("#3e3e42"), 1, Qt::DotLine));
     for (int i = 1; i < 4; ++i) {
         int y = r.top() + r.height() * i / 4;
         p.drawLine(r.left(), y, r.right(), y);
@@ -203,7 +203,7 @@ void BwGraph::drawBarChart(QPainter &p, const QRect &r,
 
         // Date label
         QString date = totals[i].date.right(5); // MM-DD
-        p.setPen(QColor("#9ba8b6"));
+        p.setPen(QColor("#8a8a8a"));
         p.drawText(QRectF(x, r.bottom()+2, barW, 12),
                    Qt::AlignCenter, date);
     }
@@ -221,20 +221,20 @@ HistoryTab::HistoryTab(QWidget *parent) : QWidget(parent)
     // Top bar
     auto *topBar = new QWidget(this);
     topBar->setObjectName("TopBar");
-    topBar->setFixedHeight(58);
+    topBar->setFixedHeight(64);
     auto *tl = new QHBoxLayout(topBar);
     tl->setContentsMargins(20,0,20,0);
     auto *ttl = new QLabel("Traffic History", topBar);
-    ttl->setStyleSheet("color:#1e2a3a;font-size:15px;font-weight:600;"
+    ttl->setStyleSheet("color:#cccccc;font-size:17px;font-weight:600;"
                        "font-family:'Ubuntu Mono';");
     auto *sub = new QLabel("Historical bandwidth per process", topBar);
-    sub->setStyleSheet("color:#9ba8b6;font-size:12px;font-family:'Ubuntu Mono';");
+    sub->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Ubuntu Mono';");
     tl->addWidget(ttl); tl->addSpacing(16); tl->addWidget(sub); tl->addStretch();
     outer->addWidget(topBar);
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
+    div->setStyleSheet("background:#3e3e42;max-height:1px;");
     outer->addWidget(div);
 
     // Splitter
@@ -244,25 +244,25 @@ HistoryTab::HistoryTab(QWidget *parent) : QWidget(parent)
     // Process list
     auto *left = new QWidget(split);
     left->setFixedWidth(180);
-    left->setStyleSheet("background:#f7f8fa;");
+    left->setStyleSheet("background:#252526;");
     auto *ll = new QVBoxLayout(left);
     ll->setContentsMargins(0,0,0,0);
     auto *lhdr = new QLabel("  PROCESSES", left);
     lhdr->setObjectName("SectionTitle");
-    lhdr->setFixedHeight(32);
+    lhdr->setFixedHeight(40);
     ll->addWidget(lhdr);
     auto *ldiv = new QFrame(left);
     ldiv->setFrameShape(QFrame::HLine);
-    ldiv->setStyleSheet("background:#e4e8ee;max-height:1px;");
+    ldiv->setStyleSheet("background:#3e3e42;max-height:1px;");
     ll->addWidget(ldiv);
     m_procList = new QListWidget(left);
     m_procList->setStyleSheet(
-        "QListWidget{background:#f7f8fa;border:none;"
+        "QListWidget{background:#1e1e1e;border:none;"
         "font-family:'Ubuntu Mono';font-size:13px;}"
-        "QListWidget::item{padding:8px 14px;border-bottom:1px solid #ffffff;}"
-        "QListWidget::item:selected{background:#e0ecff;color:#6366f1;"
+        "QListWidget::item{padding:8px 14px;border-bottom:1px solid #252526;}"
+        "QListWidget::item:selected{background:#252545;color:#c586c0;"
         "border-left:2px solid #6366f1;}"
-        "QListWidget::item:hover{background:#f7f8fa;}");
+        "QListWidget::item:hover{background:#3e3e42;}");
     connect(m_procList, &QListWidget::itemClicked,
             this, &HistoryTab::onProcessSelected);
     ll->addWidget(m_procList, 1);
@@ -272,7 +272,7 @@ HistoryTab::HistoryTab(QWidget *parent) : QWidget(parent)
     auto *rl = new QVBoxLayout(right);
     rl->setContentsMargins(0,0,0,0);
     rl->setSpacing(1);
-    right->setStyleSheet("background:#ffffff;");
+    right->setStyleSheet("background:#1e1e1e;");
 
     m_hourGraph = new BwGraph("Last 1 Hour",  BwGraph::Hour,  right);
     m_dayGraph  = new BwGraph("Last 24 Hours",BwGraph::Day24, right);
@@ -281,12 +281,12 @@ HistoryTab::HistoryTab(QWidget *parent) : QWidget(parent)
     rl->addWidget(m_hourGraph, 1);
     auto *d1 = new QFrame(right);
     d1->setFrameShape(QFrame::HLine);
-    d1->setStyleSheet("background:#e4e8ee;max-height:1px;");
+    d1->setStyleSheet("background:#3e3e42;max-height:1px;");
     rl->addWidget(d1);
     rl->addWidget(m_dayGraph, 1);
     auto *d2 = new QFrame(right);
     d2->setFrameShape(QFrame::HLine);
-    d2->setStyleSheet("background:#e4e8ee;max-height:1px;");
+    d2->setStyleSheet("background:#3e3e42;max-height:1px;");
     rl->addWidget(d2);
     rl->addWidget(m_weekGraph, 1);
 

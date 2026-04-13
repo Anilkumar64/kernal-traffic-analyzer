@@ -67,6 +67,6 @@ private:
     Page m_activePage = PAGE_CONNECTIONS;
     bool m_collapsed = false;
 
-    static const int EXPANDED_W = 200;
-    static const int COLLAPSED_W = 52;
+    static const int EXPANDED_W = 230;
+    static const int COLLAPSED_W = 48;
 };

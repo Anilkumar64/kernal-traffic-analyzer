@@ -154,8 +154,11 @@ static bool should_send_update(struct traffic_entry *e, u64 now)
     if (old_rate == 0)
         return new_rate > 0;
 
-    u32 change_pct = (u32)(abs((s64)new_rate - (s64)old_rate) * 100 / old_rate);
-    return change_pct >= UPDATE_RATE_THRESHOLD;
+    {
+        u32 diff = new_rate > old_rate ? new_rate - old_rate : old_rate - new_rate;
+        u32 change_pct = diff * 100 / old_rate;
+        return change_pct >= UPDATE_RATE_THRESHOLD;
+    }
 }
 
 /* ================================================================
@@ -200,10 +203,10 @@ static bool is_system_process(const char *comm)
 {
     /* Whitelist known system tools that generate high SYN counts */
     return (strncmp(comm, "traceroute", 10) == 0 ||
-            strncmp(comm, "ping",       4)  == 0 ||
-            strncmp(comm, "nmap",       4)  == 0 ||
-            strncmp(comm, "curl",       4)  == 0 ||
-            strncmp(comm, "wget",       4)  == 0);
+            strncmp(comm, "ping", 4) == 0 ||
+            strncmp(comm, "nmap", 4) == 0 ||
+            strncmp(comm, "curl", 4) == 0 ||
+            strncmp(comm, "wget", 4) == 0);
 }
 
 static u8 detect_anomalies(const struct proc_entry *pe)

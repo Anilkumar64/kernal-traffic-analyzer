@@ -66,9 +66,23 @@ void dns_map_insert(__be32 ip, const char *name, u32 ttl,
         entry->queried_by_comm[0] = '\0';
 
     spin_lock(&dns_lock);
+    /* Re-check: another CPU may have inserted the same IP while we allocated */
+    {
+        struct dns_entry *existing;
+        hash_for_each_possible(dns_table, existing, node, hash)
+        {
+            if (existing->ip == ip)
+            {
+                spin_unlock(&dns_lock);
+                kfree(entry);
+                goto notify;
+            }
+        }
+    }
     hash_add(dns_table, &entry->node, hash);
     spin_unlock(&dns_lock);
 
+notify:
     /* PHASE 6: notify on new entry */
     ta_nl_send_dns(ip, name, ttl, pid, comm);
 }

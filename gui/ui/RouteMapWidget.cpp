@@ -16,8 +16,8 @@
 // Colors
 // ================================================================
 const QStringList RouteMapWidget::COLORS = {
-    "#6366f1", "#10b981", "#f59e0b", "#8b5cf6",
-    "#ef4444", "#6366f1", "#10b981", "#f59e0b",
+    "#6366f1", "#10b981", "#ce9178", "#8b5cf6",
+    "#ef4444", "#6366f1", "#10b981", "#ce9178",
 };
 
 QColor RouteMapWidget::connColor(int idx) const {
@@ -104,13 +104,13 @@ void RouteMapWidget::buildLayout()
     bar->setObjectName("TopBar");
     bar->setFixedHeight(52);
     auto *bl = new QHBoxLayout(bar);
-    bl->setContentsMargins(16, 0, 16, 0);
+    bl->setContentsMargins(20, 0, 20, 0);
     auto *ttl = new QLabel("Live Route Map", bar);
-    ttl->setStyleSheet("color:#1e2a3a;font-size:14px;font-weight:600;"
+    ttl->setStyleSheet("color:#cccccc;font-size:16px;font-weight:600;"
                        "font-family:'Ubuntu Mono';");
     auto *hint = new QLabel(
         "Click a connection below to highlight its path", bar);
-    hint->setStyleSheet("color:#9ba8b6;font-size:11px;"
+    hint->setStyleSheet("color:#8a8a8a;font-size:11px;"
                         "font-family:'Ubuntu Mono';");
     bl->addWidget(ttl);
     bl->addSpacing(12);
@@ -120,18 +120,18 @@ void RouteMapWidget::buildLayout()
 
     auto *hline = new QFrame(this);
     hline->setFrameShape(QFrame::HLine);
-    hline->setStyleSheet("background:#e4e8ee;max-height:1px;");
+    hline->setStyleSheet("background:#3e3e42;max-height:1px;");
     outer->addWidget(hline);
 
     // splitter
     auto *split = new QSplitter(Qt::Horizontal, this);
     split->setHandleWidth(1);
-    split->setStyleSheet("QSplitter::handle{background:#e4e8ee;}");
+    split->setStyleSheet("QSplitter::handle{background:#3e3e42;}");
 
     // left info panel
     m_leftPanel = new QWidget(split);
     m_leftPanel->setFixedWidth(200);
-    m_leftPanel->setStyleSheet("background:#f7f8fa;");
+    m_leftPanel->setStyleSheet("background:#252526;");
     auto *ll = new QVBoxLayout(m_leftPanel);
     ll->setContentsMargins(0, 0, 0, 0);
     ll->setSpacing(0);
@@ -139,7 +139,7 @@ void RouteMapWidget::buildLayout()
     auto mkDiv = [&]() {
         auto *f = new QFrame(m_leftPanel);
         f->setFrameShape(QFrame::HLine);
-        f->setStyleSheet("background:#e4e8ee;max-height:1px;");
+        f->setStyleSheet("background:#3e3e42;max-height:1px;");
         return f;
     };
     auto mkSec = [&](const QString &t) {
@@ -154,7 +154,7 @@ void RouteMapWidget::buildLayout()
     m_sovereignty = new QLabel("-", m_leftPanel);
     m_sovereignty->setWordWrap(true);
     m_sovereignty->setStyleSheet(
-        "color:#5c6b7f;font-size:11px;padding:8px 12px;"
+        "color:#8a8a8a;font-size:11px;padding:8px 12px;"
         "font-family:'Ubuntu Mono';");
     ll->addWidget(m_sovereignty);
 
@@ -163,19 +163,19 @@ void RouteMapWidget::buildLayout()
     m_latency = new QLabel("Select a connection", m_leftPanel);
     m_latency->setWordWrap(true);
     m_latency->setStyleSheet(
-        "color:#5c6b7f;font-size:11px;padding:8px 12px;"
+        "color:#8a8a8a;font-size:11px;padding:8px 12px;"
         "font-family:'Ubuntu Mono';");
     ll->addWidget(m_latency);
     ll->addStretch();
 
     // map
     m_scene = new QGraphicsScene(0, 0, SW, SH, this);
-    m_scene->setBackgroundBrush(QBrush(QColor("#ffffff")));
+    m_scene->setBackgroundBrush(QBrush(QColor("#1e1e1e")));
 
     m_view = new QGraphicsView(m_scene, split);
     m_view->setRenderHint(QPainter::Antialiasing);
     m_view->setDragMode(QGraphicsView::ScrollHandDrag);
-    m_view->setStyleSheet("background:#ffffff;border:none;");
+    m_view->setStyleSheet("background:#1e1e1e;border:none;");
     m_view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
@@ -188,13 +188,13 @@ void RouteMapWidget::buildLayout()
     // bottom divider
     auto *bline = new QFrame(this);
     bline->setFrameShape(QFrame::HLine);
-    bline->setStyleSheet("background:#e4e8ee;max-height:1px;");
+    bline->setStyleSheet("background:#3e3e42;max-height:1px;");
     outer->addWidget(bline);
 
     // legend bar
     m_legendBar = new QWidget(this);
     m_legendBar->setFixedHeight(56);
-    m_legendBar->setStyleSheet("background:#f7f8fa;");
+    m_legendBar->setStyleSheet("background:#252526;");
     outer->addWidget(m_legendBar);
 
     drawBackground();
@@ -274,7 +274,7 @@ void RouteMapWidget::rebuildLegend()
     }
 
     auto *lay = new QHBoxLayout(m_legendBar);
-    lay->setContentsMargins(16, 0, 16, 0);
+    lay->setContentsMargins(20, 0, 20, 0);
     lay->setSpacing(0);
 
     for (int i = 0; i < m_connItems.size(); ++i) {
@@ -286,7 +286,7 @@ void RouteMapWidget::rebuildLegend()
         entry->setCursor(Qt::PointingHandCursor);
         if (ci.ip == m_selIp)
             entry->setStyleSheet(
-                "background:#eef2ff;border-radius:6px;");
+                "background:#252545;border-radius:6px;");
 
         auto *el = new QVBoxLayout(entry);
         el->setContentsMargins(10, 6, 10, 6);
@@ -303,9 +303,9 @@ void RouteMapWidget::rebuildLegend()
 
         auto *nm = new QLabel(ci.label, entry);
         nm->setStyleSheet(
-            QString("color:%1;font-size:13px;font-weight:600;"
+            QString("color:%1;font-size:15px;font-weight:600;"
                     "font-family:'Ubuntu Mono';")
-                .arg(ci.ready ? ci.color.name() : "#9ba8b6"));
+                .arg(ci.ready ? ci.color.name() : "#8a8a8a"));
 
         top->addWidget(dot);
         top->addWidget(nm);
@@ -314,7 +314,7 @@ void RouteMapWidget::rebuildLegend()
         auto *sub = new QLabel(
             QString("%1  %2").arg(ci.rate, ci.proto), entry);
         sub->setStyleSheet(
-            "color:#9ba8b6;font-size:10px;font-family:'Ubuntu Mono';");
+            "color:#8a8a8a;font-size:10px;font-family:'Ubuntu Mono';");
         el->addWidget(sub);
 
         entry->installEventFilter(this);
@@ -323,7 +323,7 @@ void RouteMapWidget::rebuildLegend()
         if (i < m_connItems.size() - 1) {
             auto *sep = new QFrame(m_legendBar);
             sep->setFrameShape(QFrame::VLine);
-            sep->setStyleSheet("background:#e4e8ee;max-width:1px;");
+            sep->setStyleSheet("background:#3e3e42;max-width:1px;");
             sep->setFixedHeight(38);
             lay->addWidget(sep);
         }
@@ -334,16 +334,16 @@ void RouteMapWidget::rebuildLegend()
     // RTT legend
     auto *sep = new QFrame(m_legendBar);
     sep->setFrameShape(QFrame::VLine);
-    sep->setStyleSheet("background:#e4e8ee;max-width:1px;");
+    sep->setStyleSheet("background:#3e3e42;max-width:1px;");
     sep->setFixedHeight(38);
     lay->addWidget(sep);
 
     struct RttEntry { QString label; QString color; };
     QList<RttEntry> rtts = {
         {"fast <50ms",        "#10b981"},
-        {"medium <150ms",     "#f59e0b"},
+        {"medium <150ms",     "#ce9178"},
         {"slow >150ms",       "#ef4444"},
-        {"travelling packet", "#ffffff"},
+        {"travelling packet", "#cccccc"},
     };
     for (const auto &r : rtts) {
         auto *w  = new QWidget(m_legendBar);
@@ -356,7 +356,7 @@ void RouteMapWidget::rebuildLegend()
             QString("background:%1;border-radius:5px;").arg(r.color));
         auto *t = new QLabel(r.label, w);
         t->setStyleSheet(
-            "color:#5c6b7f;font-size:11px;font-family:'Ubuntu Mono';");
+            "color:#8a8a8a;font-size:13px;font-family:'Ubuntu Mono';");
         wl->addWidget(d);
         wl->addWidget(t);
         lay->addWidget(w);
@@ -556,7 +556,7 @@ void RouteMapWidget::redrawRoutes()
                         QString rttS = h->rttMs > 0 ?
                             QString(" %1ms").arg(int(h->rttMs)) : "";
                         auto *lbl = m_scene->addText(h->city + rttS);
-                        lbl->setDefaultTextColor(QColor("#5c6b7f"));
+                        lbl->setDefaultTextColor(QColor("#8a8a8a"));
                         lbl->setFont(QFont("Ubuntu Mono", 8));
                         double lx = qBound(2.0,
                             pt.x() - lbl->boundingRect().width() / 2.0,

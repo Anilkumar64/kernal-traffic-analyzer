@@ -8,11 +8,11 @@ TrayIcon::TrayIcon(QWidget *parent)
 {
     m_menu = new QMenu();
     m_menu->setStyleSheet(
-        "QMenu{background:#f7f8fa;border:1px solid #d0d7e0;"
-        "color:#1e2a3a;font-family:'Ubuntu Mono';font-size:13px;}"
+        "QMenu{background:#252526;border:1px solid #555555;"
+        "color:#cccccc;font-family:'Ubuntu Mono';font-size:13px;}"
         "QMenu::item{padding:6px 20px;}"
-        "QMenu::item:selected{background:#e0ecff;color:#6366f1;}"
-        "QMenu::separator{background:#e4e8ee;height:1px;margin:4px 0;}");
+        "QMenu::item:selected{background:#252545;color:#c586c0;}"
+        "QMenu::separator{background:#3e3e42;height:1px;margin:4px 0;}");
 
     m_showAction = m_menu->addAction("Show KTA");
     m_menu->addSeparator();
@@ -49,7 +49,7 @@ QIcon TrayIcon::makeIcon(int anomalies, quint32 rateBps) const
 
     // Hexagon
     QColor hexColor = anomalies > 0 ? QColor("#ef4444") : rateBps > 0 ? QColor("#6366f1")
-                                                                      : QColor("#d0d7e0");
+                                                                      : QColor("#555555");
 
     QPainterPath hex;
     QPointF center(11, 11);
