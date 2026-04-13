@@ -42,7 +42,7 @@ static void __evict_stale_locked(void)
 
 void sock_cache_insert(struct sock *sk, pid_t pid)
 {
-    struct sock_pid_map *entry;
+    struct sock_pid_map *entry, *cur;
 
     entry = kmalloc(sizeof(*entry), GFP_ATOMIC);
     if (!entry)
@@ -54,6 +54,18 @@ void sock_cache_insert(struct sock *sk, pid_t pid)
 
     spin_lock(&sock_cache_lock);
     __evict_stale_locked();
+
+    /* Check for duplicate inside lock to avoid TOCTOU race */
+    hash_for_each_possible(sock_cache, cur, node, (unsigned long)sk)
+    {
+        if (cur->sk == sk)
+        {
+            spin_unlock(&sock_cache_lock);
+            kfree(entry);
+            return;
+        }
+    }
+
     hash_add(sock_cache, &entry->node, (unsigned long)sk);
     spin_unlock(&sock_cache_lock);
 }

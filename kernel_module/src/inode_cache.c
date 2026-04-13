@@ -76,13 +76,9 @@ pid_t inode_cache_lookup(unsigned long ino)
 
 void inode_cache_insert(unsigned long ino, pid_t pid)
 {
-    struct inode_pid_map *entry;
+    struct inode_pid_map *entry, *cur;
 
     if (!ino || !pid)
-        return;
-
-    /* Don't insert duplicates */
-    if (inode_cache_lookup(ino))
         return;
 
     entry = kmalloc(sizeof(*entry), GFP_ATOMIC);
@@ -95,6 +91,18 @@ void inode_cache_insert(unsigned long ino, pid_t pid)
 
     spin_lock(&inode_cache_lock);
     __evict_stale_locked();
+
+    /* Check for duplicate inside lock to avoid TOCTOU race */
+    hash_for_each_possible(inode_cache, cur, node, ino)
+    {
+        if (cur->ino == ino)
+        {
+            spin_unlock(&inode_cache_lock);
+            kfree(entry);
+            return;
+        }
+    }
+
     hash_add(inode_cache, &entry->node, ino);
     spin_unlock(&inode_cache_lock);
 }

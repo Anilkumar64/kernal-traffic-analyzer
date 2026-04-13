@@ -23,10 +23,6 @@ set(SOURCES
     core/BandwidthThrottler.cpp
     core/ThreatIntel.cpp
     core/TrustScorer.cpp
-    core/FirewallManager.cpp
-    core/BandwidthThrottler.cpp
-    core/ThreatIntel.cpp
-    core/TrustScorer.cpp
     ui/MainWindow.cpp
     ui/Sidebar.cpp
     ui/ConnectionsTab.cpp

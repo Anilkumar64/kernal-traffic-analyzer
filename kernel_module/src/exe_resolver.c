@@ -132,13 +132,9 @@ void exe_cache_init(void)
 
 void exe_cache_insert(pid_t pid, const char *path)
 {
-    struct exe_entry *entry;
+    struct exe_entry *entry, *cur;
 
     if (!pid || !path || !path[0])
-        return;
-
-    /* Don't insert duplicates */
-    if (exe_cache_lookup(pid, NULL, 0))
         return;
 
     entry = kmalloc(sizeof(*entry), GFP_ATOMIC);
@@ -149,6 +145,18 @@ void exe_cache_insert(pid_t pid, const char *path)
     strscpy(entry->path, path, EXE_PATH_MAX);
 
     spin_lock(&exe_cache_lock);
+
+    /* Check for duplicate inside lock to avoid TOCTOU race */
+    hash_for_each_possible(exe_cache, cur, node, (unsigned long)pid)
+    {
+        if (cur->pid == pid)
+        {
+            spin_unlock(&exe_cache_lock);
+            kfree(entry);
+            return;
+        }
+    }
+
     hash_add(exe_cache, &entry->node, (unsigned long)pid);
     spin_unlock(&exe_cache_lock);
 }
