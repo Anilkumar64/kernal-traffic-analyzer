@@ -25,12 +25,12 @@ public:
         // Draw row background
         painter->fillRect(option.rect,
             (option.state & QStyle::State_Selected)
-                ? QColor("#163050")
+                ? QColor("#e0ecff")
                 : (option.state & QStyle::State_MouseOver)
-                    ? QColor("#131920")
+                    ? QColor("#f7f8fa")
                     : (index.row() % 2 == 0
-                        ? QColor("#0d1117")
-                        : QColor("#0f1520")));
+                        ? QColor("#ffffff")
+                        : QColor("#f0f2f5")));
 
         QVector<quint32> samples = v.value<QVector<quint32>>();
         if (samples.isEmpty()) return;
@@ -53,7 +53,7 @@ public:
         QColor lineColor = index.data(Qt::ForegroundRole)
                                .value<QColor>();
         if (!lineColor.isValid())
-            lineColor = QColor("#5aabff");
+            lineColor = QColor("#6366f1");
 
         QPainterPath path;
         bool first = true;

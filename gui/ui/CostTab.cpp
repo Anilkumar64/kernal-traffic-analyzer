@@ -59,12 +59,12 @@ void CostBarChart::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     QRect r = rect().adjusted(50, 10, -10, -20);
-    p.fillRect(rect(), QColor("#0d1117"));
+    p.fillRect(rect(), QColor("#ffffff"));
 
     if (m_totals.isEmpty()) {
         QFont f("Ubuntu Mono"); f.setPixelSize(12);
         p.setFont(f);
-        p.setPen(QColor("#253040"));
+        p.setPen(QColor("#d0d7e0"));
         p.drawText(rect(), Qt::AlignCenter, "No cost data yet");
         return;
     }
@@ -78,17 +78,17 @@ void CostBarChart::paintEvent(QPaintEvent *)
     if (peak <= 0) peak = 1;
 
     // Grid
-    p.setPen(QPen(QColor("#1c2530"), 1, Qt::DotLine));
+    p.setPen(QPen(QColor("#e4e8ee"), 1, Qt::DotLine));
     for (int i = 1; i < 4; ++i) {
         int y = r.top() + r.height() * i / 4;
         p.drawLine(r.left(), y, r.right(), y);
         QFont af("Ubuntu Mono"); af.setPixelSize(9);
         p.setFont(af);
-        p.setPen(QColor("#334455"));
+        p.setPen(QColor("#9ba8b6"));
         p.drawText(QRect(r.left()-48, y-8, 44, 16),
                    Qt::AlignRight|Qt::AlignVCenter,
                    QString("₹%1").arg(peak*(4-i)/4, 0,'f',1));
-        p.setPen(QPen(QColor("#1c2530"), 1, Qt::DotLine));
+        p.setPen(QPen(QColor("#e4e8ee"), 1, Qt::DotLine));
     }
 
     int n = m_totals.size();
@@ -105,10 +105,10 @@ void CostBarChart::paintEvent(QPaintEvent *)
         double h = (cost / peak) * r.height();
 
         QColor barColor = (i == m_hoverIdx) ?
-            QColor("#f0b800") : QColor("#1d6ef5");
+            QColor("#f59e0b") : QColor("#6366f1");
         p.fillRect(QRectF(x, r.bottom()-h, barW, h), barColor);
 
-        p.setPen(QColor("#334455"));
+        p.setPen(QColor("#9ba8b6"));
         QString date = m_totals[i].date.right(5);
         p.drawText(QRectF(x, r.bottom()+2, barW, 12), Qt::AlignCenter, date);
     }
@@ -132,12 +132,12 @@ CostTab::CostTab(QWidget *parent) : QWidget(parent)
     tl->setSpacing(12);
 
     auto *ttl = new QLabel("Data Cost", topBar);
-    ttl->setStyleSheet("color:#dde8f5;font-size:15px;font-weight:600;"
+    ttl->setStyleSheet("color:#1e2a3a;font-size:15px;font-weight:600;"
                        "font-family:'Ubuntu Mono';");
 
     // Settings
     auto *rateLabel = new QLabel("Rate: ₹", topBar);
-    rateLabel->setStyleSheet("color:#6e8399;font-size:13px;font-family:'Ubuntu Mono';");
+    rateLabel->setStyleSheet("color:#5c6b7f;font-size:13px;font-family:'Ubuntu Mono';");
     m_rateSpinBox = new QDoubleSpinBox(topBar);
     m_rateSpinBox->setRange(0.1, 10000.0);
     m_rateSpinBox->setDecimals(2);
@@ -145,7 +145,7 @@ CostTab::CostTab(QWidget *parent) : QWidget(parent)
     m_rateSpinBox->setFixedWidth(90);
 
     auto *perGb = new QLabel("/GB    Limit:", topBar);
-    perGb->setStyleSheet("color:#6e8399;font-size:13px;font-family:'Ubuntu Mono';");
+    perGb->setStyleSheet("color:#5c6b7f;font-size:13px;font-family:'Ubuntu Mono';");
     m_limitSpinBox = new QDoubleSpinBox(topBar);
     m_limitSpinBox->setRange(1.0, 10000.0);
     m_limitSpinBox->setDecimals(0);
@@ -153,7 +153,7 @@ CostTab::CostTab(QWidget *parent) : QWidget(parent)
     m_limitSpinBox->setFixedWidth(80);
 
     auto *gbLabel = new QLabel("GB", topBar);
-    gbLabel->setStyleSheet("color:#6e8399;font-size:13px;font-family:'Ubuntu Mono';");
+    gbLabel->setStyleSheet("color:#5c6b7f;font-size:13px;font-family:'Ubuntu Mono';");
 
     auto *saveBtn = new QPushButton("Save", topBar);
     saveBtn->setFixedWidth(70);
@@ -167,16 +167,16 @@ CostTab::CostTab(QWidget *parent) : QWidget(parent)
 
     auto *hline = new QFrame(this);
     hline->setFrameShape(QFrame::HLine);
-    hline->setStyleSheet("background:#1c2530;max-height:1px;");
+    hline->setStyleSheet("background:#e4e8ee;max-height:1px;");
     outer->addWidget(hline);
 
     auto *scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setStyleSheet("background:#0d1117;border:none;");
+    scroll->setStyleSheet("background:#ffffff;border:none;");
 
     auto *content = new QWidget(scroll);
-    content->setStyleSheet("background:#0d1117;");
+    content->setStyleSheet("background:#ffffff;");
     auto *cl = new QVBoxLayout(content);
     cl->setContentsMargins(20,16,20,20);
     cl->setSpacing(16);
@@ -184,7 +184,7 @@ CostTab::CostTab(QWidget *parent) : QWidget(parent)
     // Summary cards
     auto mkSec = [&](const QString &t) {
         auto *l = new QLabel(t, content);
-        l->setStyleSheet("color:#334455;font-size:10px;font-weight:700;"
+        l->setStyleSheet("color:#9ba8b6;font-size:10px;font-weight:700;"
                          "letter-spacing:1.5px;background:transparent;");
         return l;
     };
@@ -194,7 +194,7 @@ CostTab::CostTab(QWidget *parent) : QWidget(parent)
     cardsRow->setSpacing(10);
 
     auto makeCard = [&](const QString &lbl, QLabel *&val,
-                        const QString &color="#dde8f5") {
+                        const QString &color="#1e2a3a") {
         auto *c = new QWidget(content);
         c->setObjectName("StatCard");
         c->setMinimumWidth(130);
@@ -202,7 +202,7 @@ CostTab::CostTab(QWidget *parent) : QWidget(parent)
         cv->setContentsMargins(14,10,14,10);
         cv->setSpacing(4);
         auto *ll2 = new QLabel(lbl, c);
-        ll2->setStyleSheet("color:#334455;font-size:10px;font-weight:700;"
+        ll2->setStyleSheet("color:#9ba8b6;font-size:10px;font-weight:700;"
                            "letter-spacing:1px;background:transparent;");
         val = new QLabel("-", c);
         val->setStyleSheet(
@@ -212,17 +212,17 @@ CostTab::CostTab(QWidget *parent) : QWidget(parent)
         cardsRow->addWidget(c, 1);
     };
 
-    makeCard("USED THIS MONTH", m_cardUsed,      "#5aabff");
-    makeCard("COST THIS MONTH", m_cardCost,      "#f0b800");
-    makeCard("REMAINING",       m_cardRemaining, "#20d060");
-    makeCard("DAYS LEFT",       m_cardDaysLeft,  "#dde8f5");
+    makeCard("USED THIS MONTH", m_cardUsed,      "#6366f1");
+    makeCard("COST THIS MONTH", m_cardCost,      "#f59e0b");
+    makeCard("REMAINING",       m_cardRemaining, "#10b981");
+    makeCard("DAYS LEFT",       m_cardDaysLeft,  "#1e2a3a");
     cl->addLayout(cardsRow);
 
     m_usageBar = new QProgressBar(content);
     m_usageBar->setFixedHeight(10);
     m_usageBar->setStyleSheet(
-        "QProgressBar{background:#1c2530;border:none;border-radius:5px;}"
-        "QProgressBar::chunk{background:#1d6ef5;border-radius:5px;}");
+        "QProgressBar{background:#e4e8ee;border:none;border-radius:5px;}"
+        "QProgressBar::chunk{background:#6366f1;border-radius:5px;}");
     cl->addWidget(m_usageBar);
 
     // Per-process table
@@ -288,10 +288,10 @@ void CostTab::updateSummary()
 
     int pct = int(qBound(0.0, s.pctUsed, 100.0));
     m_usageBar->setValue(pct);
-    QString barColor = pct > 80 ? "#f04040" :
-                       pct > 60 ? "#f0b800" : "#1d6ef5";
+    QString barColor = pct > 80 ? "#ef4444" :
+                       pct > 60 ? "#f59e0b" : "#6366f1";
     m_usageBar->setStyleSheet(
-        QString("QProgressBar{background:#1c2530;border:none;border-radius:5px;}"
+        QString("QProgressBar{background:#e4e8ee;border:none;border-radius:5px;}"
                 "QProgressBar::chunk{background:%1;border-radius:5px;}")
             .arg(barColor));
 }
@@ -311,22 +311,22 @@ void CostTab::updateTable()
             it->setFlags(Qt::ItemIsEnabled|Qt::ItemIsSelectable);
             return it;
         };
-        QColor nameColor = (i == 0) ? QColor("#f0b800") : QColor("#dde8f5");
+        QColor nameColor = (i == 0) ? QColor("#f59e0b") : QColor("#1e2a3a");
         auto right = Qt::AlignRight|Qt::AlignVCenter;
         m_table->setItem(i,0,item(c.process,
             nameColor));
         m_table->setItem(i,1,item(
             QString("₹%1").arg(c.todayCostInr,0,'f',3),
-            QColor("#5aabff"), right));
+            QColor("#6366f1"), right));
         m_table->setItem(i,2,item(
             QString("₹%1").arg(c.weekCostInr,0,'f',2),
-            QColor("#6e8399"), right));
+            QColor("#5c6b7f"), right));
         m_table->setItem(i,3,item(
             QString("₹%1").arg(c.totalCostInr,0,'f',2),
-            QColor("#f0b800"), right));
+            QColor("#f59e0b"), right));
         m_table->setItem(i,4,item(
             QString("%1%").arg(c.pctOfUsage,0,'f',1),
-            QColor("#6e8399"), right));
+            QColor("#5c6b7f"), right));
     }
 }
 

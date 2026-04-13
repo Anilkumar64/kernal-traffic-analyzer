@@ -8,11 +8,11 @@ TrayIcon::TrayIcon(QWidget *parent)
 {
     m_menu = new QMenu();
     m_menu->setStyleSheet(
-        "QMenu{background:#131920;border:1px solid #253040;"
-        "color:#dde8f5;font-family:'Ubuntu Mono';font-size:13px;}"
+        "QMenu{background:#f7f8fa;border:1px solid #d0d7e0;"
+        "color:#1e2a3a;font-family:'Ubuntu Mono';font-size:13px;}"
         "QMenu::item{padding:6px 20px;}"
-        "QMenu::item:selected{background:#163050;color:#5aabff;}"
-        "QMenu::separator{background:#1c2530;height:1px;margin:4px 0;}");
+        "QMenu::item:selected{background:#e0ecff;color:#6366f1;}"
+        "QMenu::separator{background:#e4e8ee;height:1px;margin:4px 0;}");
 
     m_showAction = m_menu->addAction("Show KTA");
     m_menu->addSeparator();
@@ -48,8 +48,8 @@ QIcon TrayIcon::makeIcon(int anomalies, quint32 rateBps) const
     p.setRenderHint(QPainter::Antialiasing);
 
     // Hexagon
-    QColor hexColor = anomalies > 0 ? QColor("#f04040") : rateBps > 0 ? QColor("#1d6ef5")
-                                                                      : QColor("#253040");
+    QColor hexColor = anomalies > 0 ? QColor("#ef4444") : rateBps > 0 ? QColor("#6366f1")
+                                                                      : QColor("#d0d7e0");
 
     QPainterPath hex;
     QPointF center(11, 11);
@@ -81,7 +81,7 @@ QIcon TrayIcon::makeIcon(int anomalies, quint32 rateBps) const
     // Anomaly badge
     if (anomalies > 0)
     {
-        p.setBrush(QColor("#f04040"));
+        p.setBrush(QColor("#ef4444"));
         p.setPen(Qt::NoPen);
         p.drawEllipse(QPointF(17, 5), 5, 5);
         QFont f("Arial");

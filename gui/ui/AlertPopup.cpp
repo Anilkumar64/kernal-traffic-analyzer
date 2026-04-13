@@ -19,8 +19,8 @@ AlertPopup::AlertPopup(QWidget *parent) : QWidget(parent,
     root->setGeometry(0, 0, W, H);
     root->setStyleSheet(
         "QWidget {"
-        "  background-color: #1a2130;"
-        "  border: 1px solid #f04040;"
+        "  background-color: #f7f8fa;"
+        "  border: 1px solid #ef4444;"
         "  border-radius: 12px;"
         "  font-family: 'Ubuntu Mono';"
         "}");
@@ -34,7 +34,7 @@ AlertPopup::AlertPopup(QWidget *parent) : QWidget(parent,
     m_icon->setFixedSize(36, 36);
     m_icon->setAlignment(Qt::AlignCenter);
     m_icon->setStyleSheet(
-        "color:#f04040;font-size:20px;"
+        "color:#ef4444;font-size:20px;"
         "background:#2a1010;border-radius:8px;"
         "border:none;");
     lay->addWidget(m_icon);
@@ -45,17 +45,17 @@ AlertPopup::AlertPopup(QWidget *parent) : QWidget(parent,
 
     m_title = new QLabel(root);
     m_title->setStyleSheet(
-        "color:#f04040;font-size:13px;font-weight:700;"
+        "color:#ef4444;font-size:13px;font-weight:700;"
         "border:none;background:transparent;");
 
     m_body = new QLabel(root);
     m_body->setStyleSheet(
-        "color:#dde8f5;font-size:13px;"
+        "color:#1e2a3a;font-size:13px;"
         "border:none;background:transparent;");
 
     m_sub = new QLabel(root);
     m_sub->setStyleSheet(
-        "color:#6e8399;font-size:11px;"
+        "color:#5c6b7f;font-size:11px;"
         "border:none;background:transparent;");
 
     textCol->addWidget(m_title);
@@ -73,20 +73,20 @@ AlertPopup::AlertPopup(QWidget *parent) : QWidget(parent,
 
 void AlertPopup::showAlert(const AnomalyEntry &a)
 {
-    QString typeColor = "#f04040";
+    QString typeColor = "#ef4444";
     QString icon = "⚠";
 
     if (a.anomaly == "PORT_SCAN") {
-        typeColor = "#f04040"; icon = "⚡";
+        typeColor = "#ef4444"; icon = "⚡";
         m_title->setText("PORT SCAN DETECTED");
     } else if (a.anomaly == "SYN_FLOOD") {
         typeColor = "#ff6060"; icon = "💥";
         m_title->setText("SYN FLOOD DETECTED");
     } else if (a.anomaly == "CONN_BURST") {
-        typeColor = "#f0b800"; icon = "⚡";
+        typeColor = "#f59e0b"; icon = "⚡";
         m_title->setText("CONNECTION BURST");
     } else if (a.anomaly == "HIGH_BW") {
-        typeColor = "#f0b800"; icon = "📡";
+        typeColor = "#f59e0b"; icon = "📡";
         m_title->setText("HIGH BANDWIDTH");
     } else {
         m_title->setText(a.anomaly);
@@ -125,10 +125,10 @@ void AlertPopup::showBgpAlert(const QString &domain,
     m_sub->setText(QString("%1 → %2").arg(expected, current));
 
     m_icon->setStyleSheet(
-        "color:#f0b800;font-size:20px;"
-        "background:#1a1500;border-radius:8px;border:none;");
+        "color:#f59e0b;font-size:20px;"
+        "background:#fffbeb;border-radius:8px;border:none;");
     m_title->setStyleSheet(
-        "color:#f0b800;font-size:13px;font-weight:700;"
+        "color:#f59e0b;font-size:13px;font-weight:700;"
         "border:none;background:transparent;");
 
     animateIn();

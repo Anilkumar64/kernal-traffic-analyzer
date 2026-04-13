@@ -43,7 +43,7 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     QRect r = rect();
-    p.fillRect(r, QColor("#0d1117"));
+    p.fillRect(r, QColor("#ffffff"));
 
     qint64 now = QDateTime::currentSecsSinceEpoch();
     qint64 tMin = now - WINDOW_SECS;
@@ -53,17 +53,17 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
     QFont tf("Ubuntu Mono");
     tf.setPixelSize(9);
     p.setFont(tf);
-    p.setPen(QPen(QColor("#1c2530"), 1, Qt::DotLine));
+    p.setPen(QPen(QColor("#e4e8ee"), 1, Qt::DotLine));
     for (int i = 0; i <= 6; ++i)
     {
         qint64 ts = tMin + i * (WINDOW_SECS / 6);
         int x = LABEL_W + int(double(ts - tMin) / WINDOW_SECS * graphW);
         p.drawLine(x, 0, x, r.height());
-        p.setPen(QColor("#334455"));
+        p.setPen(QColor("#9ba8b6"));
         p.drawText(QRect(x - 25, r.height() - 16, 50, 14),
                    Qt::AlignCenter,
                    QDateTime::fromSecsSinceEpoch(ts).toString("hh:mm"));
-        p.setPen(QPen(QColor("#1c2530"), 1, Qt::DotLine));
+        p.setPen(QPen(QColor("#e4e8ee"), 1, Qt::DotLine));
     }
 
     if (m_entries.isEmpty())
@@ -71,7 +71,7 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
         QFont nf("Ubuntu Mono");
         nf.setPixelSize(13);
         p.setFont(nf);
-        p.setPen(QColor("#253040"));
+        p.setPen(QColor("#d0d7e0"));
         p.drawText(r.adjusted(LABEL_W, 0, 0, 0),
                    Qt::AlignCenter, "No connections in the last 30 minutes");
         return;
@@ -88,8 +88,8 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
         QRect rowR(0, y, r.width(), ROW_H);
 
         // Row background
-        QColor rowBg = (i == m_hoverRow) ? QColor("#131920") : (i % 2 == 0) ? QColor("#0d1117")
-                                                                            : QColor("#0f1520");
+        QColor rowBg = (i == m_hoverRow) ? QColor("#f7f8fa") : (i % 2 == 0) ? QColor("#ffffff")
+                                                                            : QColor("#f0f2f5");
         p.fillRect(rowR, rowBg);
 
         // Label
@@ -101,7 +101,7 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
         if (label.length() > 28)
             label = label.left(25) + "...";
 
-        p.setPen(e.isActive ? QColor("#dde8f5") : QColor("#6e8399"));
+        p.setPen(e.isActive ? QColor("#1e2a3a") : QColor("#5c6b7f"));
         p.drawText(QRect(8, y + 4, LABEL_W - 12, ROW_H - 8),
                    Qt::AlignLeft | Qt::AlignVCenter, label);
 
@@ -116,7 +116,7 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
         double bh = ROW_H - 10;
         QRectF barR(x1, y + 5, qMax(2.0, x2 - x1), bh);
 
-        QColor barColor = e.protocol == "TCP" ? QColor("#1d6ef5") : QColor("#30c0f0");
+        QColor barColor = e.protocol == "TCP" ? QColor("#6366f1") : QColor("#06b6d4");
         if (!e.isActive)
             barColor.setAlpha(80);
 
@@ -194,10 +194,10 @@ TimelineTab::TimelineTab(QWidget *parent) : QWidget(parent)
     tl->setSpacing(12);
 
     auto *ttl = new QLabel("Connection Timeline", topBar);
-    ttl->setStyleSheet("color:#dde8f5;font-size:15px;font-weight:600;"
+    ttl->setStyleSheet("color:#1e2a3a;font-size:15px;font-weight:600;"
                        "font-family:'Ubuntu Mono';");
     m_countLabel = new QLabel("", topBar);
-    m_countLabel->setStyleSheet("color:#334455;font-size:12px;"
+    m_countLabel->setStyleSheet("color:#9ba8b6;font-size:12px;"
                                 "font-family:'Ubuntu Mono';");
     m_filter = new QComboBox(topBar);
     m_filter->addItems({"All", "TCP", "UDP", "Active"});
@@ -214,13 +214,13 @@ TimelineTab::TimelineTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#1c2530;max-height:1px;");
+    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
     outer->addWidget(div);
 
     // Legend
     auto *leg = new QWidget(this);
     leg->setFixedHeight(30);
-    leg->setStyleSheet("background:#0a0f16;");
+    leg->setStyleSheet("background:#f7f8fa;");
     auto *ll = new QHBoxLayout(leg);
     ll->setContentsMargins(12, 0, 12, 0);
     ll->setSpacing(16);
@@ -230,29 +230,29 @@ TimelineTab::TimelineTab(QWidget *parent) : QWidget(parent)
         d->setFixedSize(10, 10);
         d->setStyleSheet(QString("background:%1;border-radius:5px;").arg(color));
         auto *t = new QLabel(label, leg);
-        t->setStyleSheet("color:#334455;font-size:11px;font-family:'Ubuntu Mono';");
+        t->setStyleSheet("color:#9ba8b6;font-size:11px;font-family:'Ubuntu Mono';");
         ll->addWidget(d);
         ll->addWidget(t);
     };
-    mkDot("#1d6ef5", "TCP");
-    mkDot("#30c0f0", "UDP");
+    mkDot("#6366f1", "TCP");
+    mkDot("#06b6d4", "UDP");
     mkDot("#ffffff", "Active edge");
     ll->addStretch();
     auto *winLabel = new QLabel("← 30 min window →", leg);
-    winLabel->setStyleSheet("color:#253040;font-size:11px;font-family:'Ubuntu Mono';");
+    winLabel->setStyleSheet("color:#d0d7e0;font-size:11px;font-family:'Ubuntu Mono';");
     ll->addWidget(winLabel);
     outer->addWidget(leg);
 
     auto *div2 = new QFrame(this);
     div2->setFrameShape(QFrame::HLine);
-    div2->setStyleSheet("background:#1c2530;max-height:1px;");
+    div2->setStyleSheet("background:#e4e8ee;max-height:1px;");
     outer->addWidget(div2);
 
     // Scroll area
     m_scroll = new QScrollArea(this);
     m_scroll->setWidgetResizable(true);
     m_scroll->setFrameShape(QFrame::NoFrame);
-    m_scroll->setStyleSheet("background:#0d1117;border:none;");
+    m_scroll->setStyleSheet("background:#ffffff;border:none;");
 
     m_canvas = new TimelineCanvas(m_scroll);
     m_scroll->setWidget(m_canvas);

@@ -25,7 +25,7 @@ ProcBwGraph::ProcBwGraph(QWidget *parent) : QWidget(parent)
 {
     setFixedHeight(110);
     setMinimumWidth(300);
-    setStyleSheet("background:#0d1117;border-radius:4px;");
+    setStyleSheet("background:#ffffff;border-radius:4px;");
 }
 
 void ProcBwGraph::addSample(quint32 out, quint32 in)
@@ -57,9 +57,9 @@ void ProcBwGraph::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     QRect r = rect();
-    p.fillRect(r, QColor("#0d1117"));
+    p.fillRect(r, QColor("#ffffff"));
 
-    p.setPen(QPen(QColor("#1c2530"),1,Qt::DotLine));
+    p.setPen(QPen(QColor("#e4e8ee"),1,Qt::DotLine));
     for (int i=1;i<4;++i) {
         int y = r.top()+r.height()*i/4;
         p.drawLine(r.left(),y,r.right(),y);
@@ -67,7 +67,7 @@ void ProcBwGraph::paintEvent(QPaintEvent *)
 
     if (m_out.isEmpty()) {
         QFont f("Ubuntu Mono"); f.setPixelSize(12);
-        p.setFont(f); p.setPen(QColor("#253040"));
+        p.setFont(f); p.setPen(QColor("#d0d7e0"));
         p.drawText(r,Qt::AlignCenter,"Collecting data...");
         return;
     }
@@ -94,21 +94,21 @@ void ProcBwGraph::paintEvent(QPaintEvent *)
         p.setPen(QPen(color,1.5));
         p.drawPath(path);
     };
-    drawLine(m_out,QColor("#1d6ef5"));
-    drawLine(m_in, QColor("#20d060"));
+    drawLine(m_out,QColor("#6366f1"));
+    drawLine(m_in, QColor("#10b981"));
 
     QFont lf("Ubuntu Mono"); lf.setPixelSize(11); p.setFont(lf);
     if (!m_out.isEmpty()) {
-        p.setPen(QColor("#1d6ef5"));
+        p.setPen(QColor("#6366f1"));
         p.drawText(QRect(r.left()+6,r.top()+4,120,16),
                    Qt::AlignLeft,"OUT "+fmtRate(m_out.last()));
     }
     if (!m_in.isEmpty()) {
-        p.setPen(QColor("#20d060"));
+        p.setPen(QColor("#10b981"));
         p.drawText(QRect(r.left()+6,r.top()+20,120,16),
                    Qt::AlignLeft,"IN  "+fmtRate(m_in.last()));
     }
-    p.setPen(QColor("#334455"));
+    p.setPen(QColor("#9ba8b6"));
     p.drawText(QRect(r.right()-100,r.top()+4,96,16),
                Qt::AlignRight,"peak "+fmtRate(m_peak));
 }
@@ -134,8 +134,8 @@ void ProcessDetailOverlay::buildLayout()
     m_card = new QWidget(this);
     m_card->setStyleSheet(
         "QWidget#OverlayCard{"
-        "background:#0d1117;"
-        "border:1px solid #253040;"
+        "background:#ffffff;"
+        "border:1px solid #d0d7e0;"
         "border-radius:12px;}");
     m_card->setObjectName("OverlayCard");
 
@@ -147,38 +147,38 @@ void ProcessDetailOverlay::buildLayout()
     auto *hdr = new QWidget(m_card);
     hdr->setFixedHeight(64);
     hdr->setStyleSheet(
-        "background:#0a0f16;"
+        "background:#f7f8fa;"
         "border-radius:12px 12px 0 0;"
-        "border-bottom:1px solid #1c2530;");
+        "border-bottom:1px solid #e4e8ee;");
     auto *hl = new QHBoxLayout(hdr);
     hl->setContentsMargins(20,0,16,0);
 
     auto *icon = new QLabel("⬡", hdr);
-    icon->setStyleSheet("color:#1d6ef5;font-size:22px;background:transparent;");
+    icon->setStyleSheet("color:#6366f1;font-size:22px;background:transparent;");
 
     auto *nc = new QVBoxLayout(); nc->setSpacing(2);
     m_procName = new QLabel("", hdr);
     m_procName->setStyleSheet(
-        "color:#dde8f5;font-size:17px;font-weight:700;"
+        "color:#1e2a3a;font-size:17px;font-weight:700;"
         "font-family:'Ubuntu Mono';background:transparent;");
     m_exePath = new QLabel("", hdr);
     m_exePath->setStyleSheet(
-        "color:#334455;font-size:11px;"
+        "color:#9ba8b6;font-size:11px;"
         "font-family:'Ubuntu Mono';background:transparent;");
     nc->addWidget(m_procName);
     nc->addWidget(m_exePath);
 
     m_pidLabel = new QLabel("", hdr);
     m_pidLabel->setStyleSheet(
-        "color:#6e8399;font-size:12px;"
+        "color:#5c6b7f;font-size:12px;"
         "font-family:'Ubuntu Mono';background:transparent;");
 
     auto *closeBtn = new QPushButton("✕", hdr);
     closeBtn->setFixedSize(32,32);
     closeBtn->setStyleSheet(
-        "QPushButton{background:#1c2530;border:none;border-radius:8px;"
-        "color:#6e8399;font-size:14px;}"
-        "QPushButton:hover{background:#f04040;color:white;}");
+        "QPushButton{background:#e4e8ee;border:none;border-radius:8px;"
+        "color:#5c6b7f;font-size:14px;}"
+        "QPushButton:hover{background:#ef4444;color:white;}");
     connect(closeBtn, &QPushButton::clicked, this, [this](){
         hide(); emit closed();
     });
@@ -193,29 +193,29 @@ void ProcessDetailOverlay::buildLayout()
     m_scroll = new QScrollArea(m_card);
     m_scroll->setWidgetResizable(true);
     m_scroll->setFrameShape(QFrame::NoFrame);
-    m_scroll->setStyleSheet("background:#0d1117;border:none;");
+    m_scroll->setStyleSheet("background:#ffffff;border:none;");
 
     auto *content = new QWidget(m_scroll);
-    content->setStyleSheet("background:#0d1117;");
+    content->setStyleSheet("background:#ffffff;");
     auto *cl = new QVBoxLayout(content);
     cl->setContentsMargins(20,16,20,20);
     cl->setSpacing(16);
 
     auto mkSec=[&](const QString&t){
         auto*l=new QLabel(t,content);
-        l->setStyleSheet("color:#334455;font-size:10px;font-weight:700;"
+        l->setStyleSheet("color:#9ba8b6;font-size:10px;font-weight:700;"
                          "letter-spacing:1.5px;background:transparent;");
         return l;
     };
 
     // Stat cards
     auto *cardsRow = new QHBoxLayout(); cardsRow->setSpacing(10);
-    auto mkCard=[&](const QString&lbl,QLabel*&val,const QString&col="#dde8f5"){
+    auto mkCard=[&](const QString&lbl,QLabel*&val,const QString&col="#1e2a3a"){
         auto*c=new QWidget(content); c->setObjectName("StatCard");
         c->setMinimumWidth(110);
         auto*cv=new QVBoxLayout(c); cv->setContentsMargins(12,10,12,10); cv->setSpacing(4);
         auto*ll=new QLabel(lbl,c);
-        ll->setStyleSheet("color:#334455;font-size:10px;font-weight:700;"
+        ll->setStyleSheet("color:#9ba8b6;font-size:10px;font-weight:700;"
                           "letter-spacing:1px;background:transparent;");
         val=new QLabel("-",c);
         val->setStyleSheet(QString("color:%1;font-size:18px;font-weight:600;"
@@ -223,11 +223,11 @@ void ProcessDetailOverlay::buildLayout()
         cv->addWidget(ll); cv->addWidget(val);
         cardsRow->addWidget(c,1);
     };
-    mkCard("CONNECTIONS",m_cardConns,"#5aabff");
-    mkCard("OUT RATE",   m_cardOut,  "#5aabff");
-    mkCard("IN RATE",    m_cardIn,   "#20d060");
-    mkCard("TOTAL DATA", m_cardTotal,"#dde8f5");
-    mkCard("ANOMALY",    m_cardAnomaly,"#20d060");
+    mkCard("CONNECTIONS",m_cardConns,"#6366f1");
+    mkCard("OUT RATE",   m_cardOut,  "#6366f1");
+    mkCard("IN RATE",    m_cardIn,   "#10b981");
+    mkCard("TOTAL DATA", m_cardTotal,"#1e2a3a");
+    mkCard("ANOMALY",    m_cardAnomaly,"#10b981");
     cl->addLayout(cardsRow);
 
     // Bandwidth graph
@@ -279,7 +279,7 @@ void ProcessDetailOverlay::buildLayout()
     m_mapView = new QGraphicsView(m_mapScene,content);
     m_mapView->setFixedHeight(int(MH));
     m_mapView->setRenderHint(QPainter::Antialiasing);
-    m_mapView->setStyleSheet("border:1px solid #1c2530;border-radius:8px;"
+    m_mapView->setStyleSheet("border:1px solid #e4e8ee;border-radius:8px;"
                               "background:#080d13;");
     m_mapView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_mapView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -347,15 +347,15 @@ void ProcessDetailOverlay::drawMiniMap(
     m_mapScene->addEllipse(src.x()-10,src.y()-10,20,20,
         QPen(Qt::NoPen),QBrush(QColor(29,110,245,40)))->setZValue(4);
     m_mapScene->addEllipse(src.x()-5,src.y()-5,10,10,
-        QPen(Qt::NoPen),QBrush(QColor("#1d6ef5")))->setZValue(5);
+        QPen(Qt::NoPen),QBrush(QColor("#6366f1")))->setZValue(5);
     auto*sl=m_mapScene->addText("you");
-    sl->setDefaultTextColor(QColor("#5aabff"));
+    sl->setDefaultTextColor(QColor("#6366f1"));
     sl->setFont(QFont("Ubuntu Mono",7));
     sl->setPos(src.x()+7,src.y()-8); sl->setZValue(6);
 
     // Route arcs
-    static const QStringList COLS={"#388bfd","#3fb950","#f0883e",
-                                    "#bc8cff","#ff6b6b","#79c0ff"};
+    static const QStringList COLS={"#6366f1","#10b981","#f59e0b",
+                                    "#8b5cf6","#ef4444","#6366f1"};
     int ci=0;
     QSet<QString> done;
     for (const auto &e : conns) {
@@ -442,7 +442,7 @@ void ProcessDetailOverlay::populateInfo(const ProcEntry &proc)
     m_cardAnomaly->setStyleSheet(
         QString("color:%1;font-size:18px;font-weight:600;"
                 "background:transparent;")
-            .arg(clean?"#20d060":"#f04040"));
+            .arg(clean?"#10b981":"#ef4444"));
 }
 
 void ProcessDetailOverlay::populateConnections(
@@ -467,14 +467,14 @@ void ProcessDetailOverlay::populateConnections(
     for (int i=0;i<mine.size();++i) {
         const TrafficEntry&e=mine[i];
         QString dom=(e.domain.isEmpty()||e.domain=="-")?e.destIp:e.domain;
-        QColor sc = e.state==ConnState::Established?QColor("#20d060"):
-                    e.state==ConnState::UdpActive  ?QColor("#30c0f0"):
-                                                     QColor("#6e8399");
-        m_connTable->setItem(i,0,item(dom,         QColor("#5aabff")));
-        m_connTable->setItem(i,1,item(e.protocol,  QColor("#6e8399")));
+        QColor sc = e.state==ConnState::Established?QColor("#10b981"):
+                    e.state==ConnState::UdpActive  ?QColor("#06b6d4"):
+                                                     QColor("#5c6b7f");
+        m_connTable->setItem(i,0,item(dom,         QColor("#6366f1")));
+        m_connTable->setItem(i,1,item(e.protocol,  QColor("#5c6b7f")));
         m_connTable->setItem(i,2,item(e.stateString(),sc));
-        m_connTable->setItem(i,3,item(e.formatRate(e.rateOutBps),QColor("#5aabff")));
-        m_connTable->setItem(i,4,item(e.formatRate(e.rateInBps), QColor("#20d060")));
+        m_connTable->setItem(i,3,item(e.formatRate(e.rateOutBps),QColor("#6366f1")));
+        m_connTable->setItem(i,4,item(e.formatRate(e.rateInBps), QColor("#10b981")));
     }
 }
 
@@ -498,13 +498,13 @@ void ProcessDetailOverlay::populateDns(const QVector<DnsEntry> &dns)
 
     for (int i=0;i<mine.size();++i) {
         const DnsEntry&d=mine[i];
-        QColor ttlC = d.ttlRemaining>60?QColor("#20d060"):
-                      d.ttlRemaining>10?QColor("#f0b800"):QColor("#f04040");
+        QColor ttlC = d.ttlRemaining>60?QColor("#10b981"):
+                      d.ttlRemaining>10?QColor("#f59e0b"):QColor("#ef4444");
         QString ls=QDateTime::fromSecsSinceEpoch(d.lastSeen).toString("hh:mm:ss");
-        m_dnsTable->setItem(i,0,item(d.domain,      QColor("#5aabff")));
-        m_dnsTable->setItem(i,1,item(d.ip,           QColor("#dde8f5")));
+        m_dnsTable->setItem(i,0,item(d.domain,      QColor("#6366f1")));
+        m_dnsTable->setItem(i,1,item(d.ip,           QColor("#1e2a3a")));
         m_dnsTable->setItem(i,2,item(d.ttlString(),  ttlC));
-        m_dnsTable->setItem(i,3,item(ls,             QColor("#6e8399")));
+        m_dnsTable->setItem(i,3,item(ls,             QColor("#5c6b7f")));
     }
 }
 

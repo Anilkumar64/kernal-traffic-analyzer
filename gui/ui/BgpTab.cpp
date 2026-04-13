@@ -20,7 +20,7 @@ BgpTab::BgpTab(QWidget *parent) : QWidget(parent)
     auto *tl = new QHBoxLayout(topBar);
     tl->setContentsMargins(20,0,20,0);
     auto *ttl = new QLabel("BGP Route Monitor", topBar);
-    ttl->setStyleSheet("color:#dde8f5;font-size:15px;font-weight:600;"
+    ttl->setStyleSheet("color:#1e2a3a;font-size:15px;font-weight:600;"
                        "font-family:'Ubuntu Mono';");
 
     m_resetBtn = new QPushButton("Reset Learning", topBar);
@@ -31,7 +31,7 @@ BgpTab::BgpTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#1c2530;max-height:1px;");
+    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
     outer->addWidget(div);
 
     // Learning/Status banner
@@ -39,15 +39,15 @@ BgpTab::BgpTab(QWidget *parent) : QWidget(parent)
     m_statusBanner->setFixedHeight(44);
     m_statusBanner->setAlignment(Qt::AlignCenter);
     m_statusBanner->setStyleSheet(
-        "background:#0a1828;color:#5aabff;font-size:13px;font-weight:600;"
-        "font-family:'Ubuntu Mono';border-bottom:1px solid #1c2530;");
+        "background:#eef2ff;color:#6366f1;font-size:13px;font-weight:600;"
+        "font-family:'Ubuntu Mono';border-bottom:1px solid #e4e8ee;");
     outer->addWidget(m_statusBanner);
 
     // Learned routes section
     auto mkSec = [&](const QString &t) {
         auto *w = new QWidget(this);
         w->setFixedHeight(30);
-        w->setStyleSheet("background:#0a0f16;");
+        w->setStyleSheet("background:#f7f8fa;");
         auto *l = new QLabel(t, w);
         l->setObjectName("SectionTitle");
         auto *ll = new QHBoxLayout(w);
@@ -129,8 +129,8 @@ void BgpTab::rebuild()
                     "(monitoring continues in background)")
                 .arg(days));
         m_statusBanner->setStyleSheet(
-            "background:#0a1828;color:#5aabff;font-size:13px;font-weight:600;"
-            "font-family:'Ubuntu Mono';border-bottom:1px solid #1c2530;");
+            "background:#eef2ff;color:#6366f1;font-size:13px;font-weight:600;"
+            "font-family:'Ubuntu Mono';border-bottom:1px solid #e4e8ee;");
     } else {
         auto alerts = m_monitor->alerts();
         if (!alerts.isEmpty()) {
@@ -139,13 +139,13 @@ void BgpTab::rebuild()
                     .arg(alerts.size())
                     .arg(alerts.size()==1?"y":"ies"));
             m_statusBanner->setStyleSheet(
-                "background:#1f0808;color:#f04040;font-size:13px;font-weight:600;"
-                "font-family:'Ubuntu Mono';border-bottom:1px solid #1c2530;");
+                "background:#fef2f2;color:#ef4444;font-size:13px;font-weight:600;"
+                "font-family:'Ubuntu Mono';border-bottom:1px solid #e4e8ee;");
         } else {
             m_statusBanner->setText("✓  All routes normal — no BGP anomalies");
             m_statusBanner->setStyleSheet(
-                "background:#081f12;color:#20d060;font-size:13px;font-weight:600;"
-                "font-family:'Ubuntu Mono';border-bottom:1px solid #1c2530;");
+                "background:#f0fdf4;color:#10b981;font-size:13px;font-weight:600;"
+                "font-family:'Ubuntu Mono';border-bottom:1px solid #e4e8ee;");
         }
     }
 
@@ -177,13 +177,13 @@ void BgpTab::rebuild()
 
         QString status = learning ? "Learning" :
                          (totalCount > 10) ? "Stable" : "Learning";
-        QColor statusColor = (status == "Stable") ? QColor("#20d060") :
-                                                     QColor("#f0b800");
+        QColor statusColor = (status == "Stable") ? QColor("#10b981") :
+                                                     QColor("#f59e0b");
 
-        m_learnedTable->setItem(row,0,item(df.domain, QColor("#5aabff")));
-        m_learnedTable->setItem(row,1,item(bestAsns.join("→"), QColor("#6e8399")));
-        m_learnedTable->setItem(row,2,item(bestCountries.join("→"), QColor("#dde8f5")));
-        m_learnedTable->setItem(row,3,item(QString::number(totalCount), QColor("#334455")));
+        m_learnedTable->setItem(row,0,item(df.domain, QColor("#6366f1")));
+        m_learnedTable->setItem(row,1,item(bestAsns.join("→"), QColor("#5c6b7f")));
+        m_learnedTable->setItem(row,2,item(bestCountries.join("→"), QColor("#1e2a3a")));
+        m_learnedTable->setItem(row,3,item(QString::number(totalCount), QColor("#9ba8b6")));
         m_learnedTable->setItem(row,4,item(status, statusColor));
     }
 
@@ -197,18 +197,18 @@ void BgpTab::rebuild()
             auto *it2 = new QTableWidgetItem(t);
             it2->setForeground(QBrush(c));
             it2->setFlags(Qt::ItemIsEnabled|Qt::ItemIsSelectable);
-            it2->setBackground(QBrush(QColor("#1f0808")));
+            it2->setBackground(QBrush(QColor("#fef2f2")));
             return it2;
         };
 
         QString time = QDateTime::fromSecsSinceEpoch(a.timestamp)
                            .toString("hh:mm:ss");
-        QColor riskColor = (a.risk=="HIGH") ? QColor("#f04040") : QColor("#f0b800");
+        QColor riskColor = (a.risk=="HIGH") ? QColor("#ef4444") : QColor("#f59e0b");
 
-        m_alertTable->setItem(i,0,item(time, QColor("#6e8399")));
-        m_alertTable->setItem(i,1,item(a.domain, QColor("#5aabff")));
-        m_alertTable->setItem(i,2,item(a.expectedCountries.join("→"), QColor("#6e8399")));
-        m_alertTable->setItem(i,3,item(a.actualCountries.join("→"), QColor("#f04040")));
+        m_alertTable->setItem(i,0,item(time, QColor("#5c6b7f")));
+        m_alertTable->setItem(i,1,item(a.domain, QColor("#6366f1")));
+        m_alertTable->setItem(i,2,item(a.expectedCountries.join("→"), QColor("#5c6b7f")));
+        m_alertTable->setItem(i,3,item(a.actualCountries.join("→"), QColor("#ef4444")));
         m_alertTable->setItem(i,4,item(a.risk, riskColor));
     }
 }

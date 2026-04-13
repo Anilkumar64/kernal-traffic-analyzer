@@ -21,9 +21,9 @@ ProcessesTab::ProcessesTab(QWidget *parent) : QWidget(parent)
 
     auto *titleLbl = new QLabel("Processes", topBar);
     titleLbl->setStyleSheet(
-        "color:#e6edf3;font-size:14px;font-weight:600;font-family:Monospace;");
+        "color:#1e2a3a;font-size:14px;font-weight:600;font-family:Monospace;");
     m_countLabel = new QLabel("", topBar);
-    m_countLabel->setStyleSheet("color:#484f58;font-size:11px;font-family:Monospace;");
+    m_countLabel->setStyleSheet("color:#9ba8b6;font-size:11px;font-family:Monospace;");
     tl->addWidget(titleLbl);
     tl->addWidget(m_countLabel);
     tl->addStretch();
@@ -40,7 +40,7 @@ ProcessesTab::ProcessesTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#30363d;max-height:1px;");
+    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
     outerLayout->addWidget(div);
 
     // Model + proxy

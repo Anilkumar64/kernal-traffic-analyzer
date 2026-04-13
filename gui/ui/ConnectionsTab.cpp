@@ -20,7 +20,7 @@ DetailPanel::DetailPanel(QWidget *parent) : QWidget(parent)
 
     m_process = new QLabel("", this);
     m_process->setStyleSheet(
-        "color:#e6edf3;font-size:13px;font-weight:600;font-family:Monospace;");
+        "color:#1e2a3a;font-size:13px;font-weight:600;font-family:Monospace;");
     layout->addWidget(m_process);
 
     auto *statsRow = new QHBoxLayout();
@@ -37,10 +37,10 @@ DetailPanel::DetailPanel(QWidget *parent) : QWidget(parent)
         cl->setSpacing(2);
         auto *lbl = new QLabel(label, card);
         lbl->setStyleSheet(
-            "color:#8b949e;font-size:10px;letter-spacing:1px;font-family:Monospace;");
+            "color:#5c6b7f;font-size:10px;letter-spacing:1px;font-family:Monospace;");
         val = new QLabel("-", card);
         val->setStyleSheet(
-            "color:#e6edf3;font-size:17px;font-weight:600;font-family:Monospace;");
+            "color:#1e2a3a;font-size:17px;font-weight:600;font-family:Monospace;");
         cl->addWidget(lbl);
         cl->addWidget(val);
         statsRow->addWidget(card);
@@ -52,9 +52,9 @@ DetailPanel::DetailPanel(QWidget *parent) : QWidget(parent)
     makeCard("DURATION", m_statDuration);
 
     m_domain = new QLabel("", this);
-    m_domain->setStyleSheet("color:#58a6ff;font-size:11px;font-family:Monospace;");
+    m_domain->setStyleSheet("color:#6366f1;font-size:11px;font-family:Monospace;");
     m_route = new QLabel("", this);
-    m_route->setStyleSheet("color:#8b949e;font-size:10px;font-family:Monospace;");
+    m_route->setStyleSheet("color:#5c6b7f;font-size:10px;font-family:Monospace;");
 
     auto *infoRow = new QHBoxLayout();
     infoRow->addWidget(m_domain);
@@ -137,7 +137,7 @@ ConnectionsTab::ConnectionsTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#30363d;max-height:1px;");
+    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
     outerLayout->addWidget(div);
 
     // Splitter: table on top, detail panel below

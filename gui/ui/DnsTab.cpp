@@ -20,9 +20,9 @@ DnsTab::DnsTab(QWidget *parent) : QWidget(parent)
     tl->setContentsMargins(16, 0, 16, 0);
     auto *title = new QLabel("DNS Map", topBar);
     title->setStyleSheet(
-        "color:#e6edf3;font-size:14px;font-weight:600;font-family:'Ubuntu Mono';");
+        "color:#1e2a3a;font-size:14px;font-weight:600;font-family:'Ubuntu Mono';");
     m_countLabel = new QLabel("", topBar);
-    m_countLabel->setStyleSheet("color:#484f58;font-size:11px;");
+    m_countLabel->setStyleSheet("color:#9ba8b6;font-size:11px;");
     tl->addWidget(title);
     tl->addWidget(m_countLabel);
     tl->addStretch();
@@ -30,7 +30,7 @@ DnsTab::DnsTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#30363d;max-height:1px;");
+    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
     outer->addWidget(div);
 
     // Table
@@ -65,7 +65,7 @@ void DnsTab::updateData(const QVector<DnsEntry> &entries)
     for (int i = 0; i < entries.size(); ++i) {
         const DnsEntry &e = entries[i];
 
-        auto makeItem = [](const QString &text, const QColor &color = QColor("#e6edf3")) {
+        auto makeItem = [](const QString &text, const QColor &color = QColor("#1e2a3a")) {
             auto *item = new QTableWidgetItem(text);
             item->setForeground(QBrush(color));
             item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
@@ -78,17 +78,17 @@ void DnsTab::updateData(const QVector<DnsEntry> &entries)
                                 .toString("hh:mm:ss");
 
         // Color TTL based on remaining time
-        QColor ttlColor = e.ttlRemaining > 60 ? QColor("#3fb950") :
-                          e.ttlRemaining > 10 ? QColor("#d29922") :
-                                                QColor("#f85149");
+        QColor ttlColor = e.ttlRemaining > 60 ? QColor("#10b981") :
+                          e.ttlRemaining > 10 ? QColor("#f59e0b") :
+                                                QColor("#ef4444");
 
-        m_table->setItem(i, 0, makeItem(e.domain,        QColor("#58a6ff")));
-        m_table->setItem(i, 1, makeItem(e.ip,            QColor("#e6edf3")));
+        m_table->setItem(i, 0, makeItem(e.domain,        QColor("#6366f1")));
+        m_table->setItem(i, 1, makeItem(e.ip,            QColor("#1e2a3a")));
         m_table->setItem(i, 2, makeItem(e.ttlString(),   ttlColor));
-        m_table->setItem(i, 3, makeItem(e.queriedByComm, QColor("#8b949e")));
+        m_table->setItem(i, 3, makeItem(e.queriedByComm, QColor("#5c6b7f")));
         m_table->setItem(i, 4, makeItem(QString::number(e.queriedByPid),
-                                         QColor("#484f58")));
-        m_table->setItem(i, 5, makeItem(firstSeen,       QColor("#8b949e")));
-        m_table->setItem(i, 6, makeItem(lastSeen,        QColor("#8b949e")));
+                                         QColor("#9ba8b6")));
+        m_table->setItem(i, 5, makeItem(firstSeen,       QColor("#5c6b7f")));
+        m_table->setItem(i, 6, makeItem(lastSeen,        QColor("#5c6b7f")));
     }
 }

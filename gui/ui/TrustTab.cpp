@@ -19,10 +19,10 @@ TrustTab::TrustTab(QWidget *parent) : QWidget(parent)
     auto *tl = new QHBoxLayout(topBar);
     tl->setContentsMargins(20, 0, 20, 0);
     auto *ttl = new QLabel("Process Trust Score", topBar);
-    ttl->setStyleSheet("color:#dde8f5;font-size:15px;font-weight:600;"
+    ttl->setStyleSheet("color:#1e2a3a;font-size:15px;font-weight:600;"
                        "font-family:'Ubuntu Mono';");
     m_summary = new QLabel("", topBar);
-    m_summary->setStyleSheet("color:#334455;font-size:12px;"
+    m_summary->setStyleSheet("color:#9ba8b6;font-size:12px;"
                              "font-family:'Ubuntu Mono';");
     tl->addWidget(ttl);
     tl->addSpacing(12);
@@ -32,7 +32,7 @@ TrustTab::TrustTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#1c2530;max-height:1px;");
+    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
     outer->addWidget(div);
 
     // Info banner
@@ -41,9 +41,9 @@ TrustTab::TrustTab(QWidget *parent) : QWidget(parent)
         "connection count, bandwidth, and known process signatures",
         this);
     info->setFixedHeight(30);
-    info->setStyleSheet("background:#0a0f16;color:#334455;font-size:11px;"
+    info->setStyleSheet("background:#f7f8fa;color:#9ba8b6;font-size:11px;"
                         "font-family:'Ubuntu Mono';"
-                        "border-bottom:1px solid #1c2530;");
+                        "border-bottom:1px solid #e4e8ee;");
     outer->addWidget(info);
 
     m_table = new QTableWidget(0, 6, this);
@@ -94,7 +94,7 @@ void TrustTab::updateData(const QVector<ProcEntry> &procs,
         if (exe.length() > 35)
             exe = "..." + exe.right(32);
 
-        m_table->setItem(i, 0, item(ts.process, QColor("#dde8f5")));
+        m_table->setItem(i, 0, item(ts.process, QColor("#1e2a3a")));
 
         // Grade as styled item
         auto *gradeItem = new QTableWidgetItem(ts.grade);
@@ -118,7 +118,7 @@ void TrustTab::updateData(const QVector<ProcEntry> &procs,
         bar->setFixedHeight(10);
         bar->setTextVisible(false);
         bar->setStyleSheet(
-            QString("QProgressBar{background:#1c2530;border:none;border-radius:5px;}"
+            QString("QProgressBar{background:#e4e8ee;border:none;border-radius:5px;}"
                     "QProgressBar::chunk{background:%1;border-radius:5px;}")
                 .arg(ts.color.name()));
         auto *numL = new QLabel(QString::number(ts.score), scoreW);
@@ -131,9 +131,9 @@ void TrustTab::updateData(const QVector<ProcEntry> &procs,
         sl->addWidget(numL);
         m_table->setCellWidget(i, 2, scoreW);
 
-        m_table->setItem(i, 3, item(exe, QColor("#334455")));
-        m_table->setItem(i, 4, item(procs[i].anomalyStr.isEmpty() ? "Clean" : procs[i].anomalyStr, procs[i].hasAnomaly() ? QColor("#f04040") : QColor("#20d060")));
-        m_table->setItem(i, 5, item(ts.reasons.isEmpty() ? "Standard process" : ts.reasons.join(" · "), QColor("#6e8399")));
+        m_table->setItem(i, 3, item(exe, QColor("#9ba8b6")));
+        m_table->setItem(i, 4, item(procs[i].anomalyStr.isEmpty() ? "Clean" : procs[i].anomalyStr, procs[i].hasAnomaly() ? QColor("#ef4444") : QColor("#10b981")));
+        m_table->setItem(i, 5, item(ts.reasons.isEmpty() ? "Standard process" : ts.reasons.join(" · "), QColor("#5c6b7f")));
 
         // Row background for low trust
         if (ts.score < 40)
@@ -141,7 +141,7 @@ void TrustTab::updateData(const QVector<ProcEntry> &procs,
             for (int col = 0; col < 6; ++col)
                 if (m_table->item(i, col))
                     m_table->item(i, col)->setBackground(
-                        QBrush(QColor("#1f0808")));
+                        QBrush(QColor("#fef2f2")));
         }
     }
 

@@ -66,23 +66,23 @@ void ProcessLoadBar::paintEvent(QPaintEvent *)
                       m_anomaly != "None";
 
     // Background
-    p.fillRect(r, hasAnomaly ? QColor("#1a0808") : QColor("#0d1117"));
+    p.fillRect(r, hasAnomaly ? QColor("#fef2f2") : QColor("#ffffff"));
 
     // Left accent bar
     p.fillRect(0, 0, 3, r.height(),
-               hasAnomaly ? QColor("#f04040") : QColor("#1d6ef5"));
+               hasAnomaly ? QColor("#ef4444") : QColor("#6366f1"));
 
     // Process name
     QFont nf("Ubuntu Mono"); nf.setPixelSize(15); nf.setWeight(QFont::Medium);
     p.setFont(nf);
-    p.setPen(hasAnomaly ? QColor("#f04040") : QColor("#dde8f5"));
+    p.setPen(hasAnomaly ? QColor("#ef4444") : QColor("#1e2a3a"));
     p.drawText(QRect(14, 8, 220, 22),
                Qt::AlignLeft|Qt::AlignVCenter, m_process);
 
     // Exe path
     QFont ef("Ubuntu Mono"); ef.setPixelSize(11);
     p.setFont(ef);
-    p.setPen(QColor("#334455"));
+    p.setPen(QColor("#9ba8b6"));
     QString exe = m_exe.length() > 45 ? "..." + m_exe.right(42) : m_exe;
     p.drawText(QRect(14, 30, 320, 16),
                Qt::AlignLeft|Qt::AlignVCenter, exe);
@@ -95,7 +95,7 @@ void ProcessLoadBar::paintEvent(QPaintEvent *)
         int bw = fm.horizontalAdvance(m_anomaly) + 14;
         QRect badgeR(14, 50, bw, 18);
         p.fillRect(badgeR, QColor("#2d0808"));
-        p.setPen(QColor("#f04040"));
+        p.setPen(QColor("#ef4444"));
         p.drawRect(badgeR);
         p.drawText(badgeR, Qt::AlignCenter, m_anomaly);
     }
@@ -106,7 +106,7 @@ void ProcessLoadBar::paintEvent(QPaintEvent *)
     // Connection count + total bytes
     QFont sf("Ubuntu Mono"); sf.setPixelSize(12);
     p.setFont(sf);
-    p.setPen(QColor("#6e8399"));
+    p.setPen(QColor("#5c6b7f"));
     p.drawText(QRect(rx, 8, 90, 18),
                Qt::AlignRight|Qt::AlignVCenter,
                QString("%1 conns").arg(m_conns));
@@ -124,7 +124,7 @@ void ProcessLoadBar::paintEvent(QPaintEvent *)
     // Labels
     QFont lf("Ubuntu Mono"); lf.setPixelSize(10);
     p.setFont(lf);
-    p.setPen(QColor("#334455"));
+    p.setPen(QColor("#9ba8b6"));
     p.drawText(QRect(barX-34, outY, 32, barH),
                Qt::AlignRight|Qt::AlignVCenter, "OUT");
     p.drawText(QRect(barX-34, inY, 32, barH),
@@ -132,8 +132,8 @@ void ProcessLoadBar::paintEvent(QPaintEvent *)
 
     // Bar backgrounds
     p.setPen(Qt::NoPen);
-    p.fillRect(barX, outY, barW, barH, QColor("#1c2530"));
-    p.fillRect(barX, inY,  barW, barH, QColor("#1c2530"));
+    p.fillRect(barX, outY, barW, barH, QColor("#e4e8ee"));
+    p.fillRect(barX, inY,  barW, barH, QColor("#e4e8ee"));
 
     // Filled bars
     double outRatio = qMin(1.0, m_rateOut / double(m_peakOut));
@@ -141,26 +141,26 @@ void ProcessLoadBar::paintEvent(QPaintEvent *)
 
     if (outRatio > 0) {
         QLinearGradient og(barX,0,barX+barW,0);
-        og.setColorAt(0,"#1d6ef5"); og.setColorAt(1,"#5aabff");
+        og.setColorAt(0,"#6366f1"); og.setColorAt(1,"#6366f1");
         p.fillRect(barX, outY, int(barW*outRatio), barH, og);
     }
     if (inRatio > 0) {
         QLinearGradient ig(barX,0,barX+barW,0);
-        ig.setColorAt(0,"#20d060"); ig.setColorAt(1,"#6ee7a0");
+        ig.setColorAt(0,"#10b981"); ig.setColorAt(1,"#6ee7a0");
         p.fillRect(barX, inY, int(barW*inRatio), barH, ig);
     }
 
     // Rate values
     p.setFont(lf);
-    p.setPen(m_rateOut>0 ? QColor("#5aabff") : QColor("#334455"));
+    p.setPen(m_rateOut>0 ? QColor("#6366f1") : QColor("#9ba8b6"));
     p.drawText(QRect(barX, outY+12, barW, 14),
                Qt::AlignLeft|Qt::AlignVCenter, fmtRate(m_rateOut));
-    p.setPen(m_rateIn>0 ? QColor("#20d060") : QColor("#334455"));
+    p.setPen(m_rateIn>0 ? QColor("#10b981") : QColor("#9ba8b6"));
     p.drawText(QRect(barX, inY+12, barW, 14),
                Qt::AlignLeft|Qt::AlignVCenter, fmtRate(m_rateIn));
 
     // Divider
-    p.setPen(QPen(QColor("#1c2530"),1));
+    p.setPen(QPen(QColor("#e4e8ee"),1));
     p.drawLine(0, r.height()-1, r.width(), r.height()-1);
 }
 
@@ -186,15 +186,15 @@ LoadBalancerTab::LoadBalancerTab(QWidget *parent) : QWidget(parent)
     tl->setContentsMargins(20,0,20,0);
 
     auto *title = new QLabel("Bandwidth Load", topBar);
-    title->setStyleSheet("color:#dde8f5;font-size:15px;font-weight:600;"
+    title->setStyleSheet("color:#1e2a3a;font-size:15px;font-weight:600;"
                          "font-family:'Ubuntu Mono';");
     auto *hint = new QLabel(
         "Live bandwidth per process  —  click any row to inspect",
         topBar);
-    hint->setStyleSheet("color:#334455;font-size:12px;"
+    hint->setStyleSheet("color:#9ba8b6;font-size:12px;"
                         "font-family:'Ubuntu Mono';");
     m_totalLabel = new QLabel("", topBar);
-    m_totalLabel->setStyleSheet("color:#6e8399;font-size:12px;"
+    m_totalLabel->setStyleSheet("color:#5c6b7f;font-size:12px;"
                                 "font-family:'Ubuntu Mono';");
     tl->addWidget(title);
     tl->addSpacing(16);
@@ -206,12 +206,12 @@ LoadBalancerTab::LoadBalancerTab(QWidget *parent) : QWidget(parent)
     // Column headers
     auto *hdr = new QWidget(this);
     hdr->setFixedHeight(30);
-    hdr->setStyleSheet("background:#0a0f16;");
+    hdr->setStyleSheet("background:#f7f8fa;");
     auto *hl = new QHBoxLayout(hdr);
     hl->setContentsMargins(17,0,20,0);
     auto mkH = [&](const QString &t, int stretch=0) {
         auto *l = new QLabel(t, hdr);
-        l->setStyleSheet("color:#334455;font-size:10px;font-weight:700;"
+        l->setStyleSheet("color:#9ba8b6;font-size:10px;font-weight:700;"
                          "font-family:'Ubuntu Mono';letter-spacing:1px;");
         if (stretch) hl->addWidget(l,stretch);
         else hl->addWidget(l);
@@ -225,17 +225,17 @@ LoadBalancerTab::LoadBalancerTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#1c2530;max-height:1px;");
+    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
     outer->addWidget(div);
 
     // Scroll area
     m_scroll = new QScrollArea(this);
     m_scroll->setWidgetResizable(true);
     m_scroll->setFrameShape(QFrame::NoFrame);
-    m_scroll->setStyleSheet("QScrollArea{background:#0d1117;border:none;}");
+    m_scroll->setStyleSheet("QScrollArea{background:#ffffff;border:none;}");
 
     m_container = new QWidget(m_scroll);
-    m_container->setStyleSheet("background:#0d1117;");
+    m_container->setStyleSheet("background:#ffffff;");
     auto *cl = new QVBoxLayout(m_container);
     cl->setContentsMargins(0,0,0,0);
     cl->setSpacing(0);

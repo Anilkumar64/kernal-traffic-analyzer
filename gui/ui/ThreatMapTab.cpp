@@ -27,10 +27,10 @@ ThreatMapTab::ThreatMapTab(QWidget *parent) : QWidget(parent)
     auto *tl = new QHBoxLayout(topBar);
     tl->setContentsMargins(20, 0, 20, 0);
     auto *ttl = new QLabel("Network Threat Map", topBar);
-    ttl->setStyleSheet("color:#dde8f5;font-size:15px;font-weight:600;"
+    ttl->setStyleSheet("color:#1e2a3a;font-size:15px;font-weight:600;"
                        "font-family:'Ubuntu Mono';");
     m_statusLabel = new QLabel("Scanning connections...", topBar);
-    m_statusLabel->setStyleSheet("color:#334455;font-size:12px;"
+    m_statusLabel->setStyleSheet("color:#9ba8b6;font-size:12px;"
                                  "font-family:'Ubuntu Mono';");
     tl->addWidget(ttl);
     tl->addSpacing(16);
@@ -40,7 +40,7 @@ ThreatMapTab::ThreatMapTab(QWidget *parent) : QWidget(parent)
 
     auto *div = new QFrame(this);
     div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#1c2530;max-height:1px;");
+    div->setStyleSheet("background:#e4e8ee;max-height:1px;");
     outer->addWidget(div);
 
     auto *split = new QSplitter(Qt::Vertical, this);
@@ -151,7 +151,7 @@ void ThreatMapTab::rebuildMap()
     srcG->setZValue(4);
     m_items.append(srcG);
     auto *srcD = m_scene->addEllipse(src.x() - 6, src.y() - 6, 12, 12,
-                                     QPen(Qt::NoPen), QBrush(QColor("#1d6ef5")));
+                                     QPen(Qt::NoPen), QBrush(QColor("#6366f1")));
     srcD->setZValue(5);
     m_items.append(srcD);
 
@@ -281,16 +281,16 @@ void ThreatMapTab::rebuildTable()
             auto*it=new QTableWidgetItem(t);
             it->setForeground(QBrush(c));
             it->setFlags(Qt::ItemIsEnabled|Qt::ItemIsSelectable);
-            it->setBackground(QBrush(QColor("#1f0808")));
+            it->setBackground(QBrush(QColor("#fef2f2")));
             return it; };
 
         QString ts = ti.lastSeen > 0 ? QDateTime::fromSecsSinceEpoch(ti.lastSeen).toString("hh:mm:ss") : "-";
 
-        m_table->setItem(i, 0, item(ti.ip, QColor("#f04040")));
-        m_table->setItem(i, 1, item(e.process, QColor("#dde8f5")));
+        m_table->setItem(i, 0, item(ti.ip, QColor("#ef4444")));
+        m_table->setItem(i, 1, item(e.process, QColor("#1e2a3a")));
         m_table->setItem(i, 2, item(ThreatIntel::instance().labelForLevel(ti.level), col));
         m_table->setItem(i, 3, item(QString::number(ti.score), col));
-        m_table->setItem(i, 4, item(ti.category, QColor("#6e8399")));
-        m_table->setItem(i, 5, item(ts, QColor("#334455")));
+        m_table->setItem(i, 4, item(ti.category, QColor("#5c6b7f")));
+        m_table->setItem(i, 5, item(ts, QColor("#9ba8b6")));
     }
 }
