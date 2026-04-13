@@ -6,7 +6,7 @@
 
 set -e
 
-PROJ=/home/anilreddy/Documents/Projects/kernel_traffic_analyzer
+PROJ="$(cd "$(dirname "$0")" && pwd)"
 MODULE_DIR=$PROJ/kernel_module
 GUI_DIR=$PROJ/gui
 BUILD_DIR=$GUI_DIR/build

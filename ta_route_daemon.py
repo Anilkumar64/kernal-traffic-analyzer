@@ -18,6 +18,7 @@ import os
 import argparse
 import logging
 import ipaddress
+import signal
 
 try:
     import geoip2.database
@@ -282,7 +283,13 @@ def main():
 
     geo         = GeoIP()
     in_progress = set()
+    def _shutdown(signum, frame):
+        log.info("Received signal %d \u2014 shutting down", signum)
+        geo.close()
+        sys.exit(0)
 
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT,  _shutdown)
     try:
         while True:
             pending = read_pending()
