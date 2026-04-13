@@ -64,16 +64,16 @@ ProcessesTab::ProcessesTab(QWidget *parent) : QWidget(parent)
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_table->horizontalHeader()->setStretchLastSection(false);
 
-    m_table->setColumnWidth(ProcModel::COL_PROCESS,  130);
-    m_table->setColumnWidth(ProcModel::COL_EXE,      210);
-    m_table->setColumnWidth(ProcModel::COL_CONNS,    140);
-    m_table->setColumnWidth(ProcModel::COL_RATE_OUT,  88);
-    m_table->setColumnWidth(ProcModel::COL_RATE_IN,   88);
-    m_table->setColumnWidth(ProcModel::COL_BYTES,     88);
-    m_table->setColumnWidth(ProcModel::COL_TCP_PCT,   58);
-    m_table->setColumnWidth(ProcModel::COL_ANOMALY,  110);
+    m_table->setColumnWidth(ProcModel::COL_PROCESS, 130);
+    m_table->setColumnWidth(ProcModel::COL_EXE, 210);
+    m_table->setColumnWidth(ProcModel::COL_CONNS, 140);
+    m_table->setColumnWidth(ProcModel::COL_RATE_OUT, 88);
+    m_table->setColumnWidth(ProcModel::COL_RATE_IN, 88);
+    m_table->setColumnWidth(ProcModel::COL_BYTES, 88);
+    m_table->setColumnWidth(ProcModel::COL_TCP_PCT, 58);
+    m_table->setColumnWidth(ProcModel::COL_ANOMALY, 110);
     m_table->setColumnWidth(ProcModel::COL_TOP_DEST, 190);
-    m_table->setColumnWidth(ProcModel::COL_PID,       55);
+    m_table->setColumnWidth(ProcModel::COL_PID, 55);
     m_table->sortByColumn(ProcModel::COL_RATE_IN, Qt::DescendingOrder);
 
     connect(m_table, &QTableView::clicked,
@@ -90,8 +90,11 @@ void ProcessesTab::updateData(const QVector<ProcEntry> &entries)
 
 void ProcessesTab::onRowClicked(const QModelIndex &index)
 {
-    if (!index.isValid()) return;
+    if (!index.isValid())
+        return;
     QModelIndex src = m_proxy->mapToSource(index);
+    if (!src.isValid() || src.row() < 0 || src.row() >= m_model->rowCount())
+        return;
     const ProcEntry &e = m_model->entryAt(src.row());
     emit processClicked(e.pid, e.process, e.exe);
 }

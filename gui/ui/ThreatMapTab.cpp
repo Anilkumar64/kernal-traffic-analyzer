@@ -178,7 +178,7 @@ void ThreatMapTab::rebuildMap()
         QHostAddress addr(e.destIp);
         quint32 ipv4 = addr.toIPv4Address();
         if (!ipv4)
-            continue;
+            continue; // skip invalid or IPv6 addresses
 
         // Map IP to approximate region
         double lat = 0, lon = 0;
