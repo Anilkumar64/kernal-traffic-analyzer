@@ -71,6 +71,71 @@ static enum conn_state tcp_derive_state(struct sk_buff *skb, bool incoming)
     return CONN_STATE_ESTABLISHED;
 }
 
+static bool ipv6_find_transport(struct sk_buff *skb,
+                                u8 *protocol,
+                                int *transport_off)
+{
+    struct ipv6hdr *ip6;
+    u8 nexthdr;
+    int offset = sizeof(struct ipv6hdr);
+
+    if (!pskb_may_pull(skb, sizeof(struct ipv6hdr)))
+        return false;
+
+    ip6 = (struct ipv6hdr *)skb->data;
+    nexthdr = ip6->nexthdr;
+
+    while (nexthdr == NEXTHDR_HOP ||
+           nexthdr == NEXTHDR_ROUTING ||
+           nexthdr == NEXTHDR_DEST ||
+           nexthdr == NEXTHDR_FRAGMENT ||
+           nexthdr == NEXTHDR_AUTH)
+    {
+        if (nexthdr == NEXTHDR_FRAGMENT)
+        {
+            struct frag_hdr *fh;
+
+            if (!pskb_may_pull(skb, offset + sizeof(*fh)))
+                return false;
+            fh = (struct frag_hdr *)(skb->data + offset);
+            if (ntohs(fh->frag_off) & ~0x7)
+                return false;
+            nexthdr = fh->nexthdr;
+            offset += sizeof(*fh);
+            continue;
+        }
+
+        if (nexthdr == NEXTHDR_AUTH)
+        {
+            struct ipv6_opt_hdr *ah;
+
+            if (!pskb_may_pull(skb, offset + sizeof(*ah)))
+                return false;
+            ah = (struct ipv6_opt_hdr *)(skb->data + offset);
+            nexthdr = ah->nexthdr;
+            offset += (ah->hdrlen + 2) << 2;
+            continue;
+        }
+
+        {
+            struct ipv6_opt_hdr *opthdr;
+
+            if (!pskb_may_pull(skb, offset + sizeof(*opthdr)))
+                return false;
+            opthdr = (struct ipv6_opt_hdr *)(skb->data + offset);
+            nexthdr = opthdr->nexthdr;
+            offset += (opthdr->hdrlen + 1) << 3;
+        }
+    }
+
+    if (nexthdr != IPPROTO_TCP && nexthdr != IPPROTO_UDP)
+        return false;
+
+    *protocol = nexthdr;
+    *transport_off = offset;
+    return true;
+}
+
 /* ================================================================
  * parse_packet
  * ================================================================ */
@@ -92,6 +157,7 @@ void parse_packet(struct sk_buff *skb, bool incoming)
     bool is_resolved = false;
     bool should_scan = false;
     bool is_new_conn = false;
+    bool tcp_syn_only = false;
 
     enum conn_state state = CONN_STATE_ESTABLISHED;
 
@@ -130,13 +196,13 @@ void parse_packet(struct sk_buff *skb, bool incoming)
         break;
 
     case 6:
-        if (!pskb_may_pull(skb, sizeof(struct ipv6hdr)))
+    {
+        int transport_off;
+
+        if (!ipv6_find_transport(skb, &protocol, &transport_off))
             return;
         ip6 = (struct ipv6hdr *)skb->data;
         if (!ip6)
-            return;
-        protocol = ip6->nexthdr;
-        if (protocol != IPPROTO_TCP && protocol != IPPROTO_UDP)
             return;
         /*
          * Store last 32 bits of each IPv6 address.  For connections
@@ -148,8 +214,9 @@ void parse_packet(struct sk_buff *skb, bool incoming)
         saddr = ip6->saddr.s6_addr32[3];
         daddr = ip6->daddr.s6_addr32[3];
         is_ipv6 = true;
-        skb_set_transport_header(skb, sizeof(struct ipv6hdr));
+        skb_set_transport_header(skb, transport_off);
         break;
+    }
 
     default:
         return;
@@ -177,7 +244,7 @@ void parse_packet(struct sk_buff *skb, bool incoming)
         state = tcp_derive_state(skb, incoming);
 
         if (tcp->syn && !tcp->ack)
-            is_new_conn = true;
+            tcp_syn_only = true;
     }
     else
     { /* IPPROTO_UDP */
@@ -200,13 +267,17 @@ void parse_packet(struct sk_buff *skb, bool incoming)
      * 3. FLOW KEY
      * ================================================================ */
     {
-        struct flow_key key = {
-            .src_ip = saddr,
-            .dest_ip = daddr,
-            .src_port = htons(src_port),
-            .dest_port = htons(dest_port),
-            .protocol = protocol,
-        };
+        struct flow_key key;
+
+        memset(&key, 0, sizeof(key));
+        key.src_ip = saddr;
+        key.dest_ip = daddr;
+        key.src_port = htons(src_port);
+        key.dest_port = htons(dest_port);
+        key.protocol = protocol;
+
+        if (tcp_syn_only && !flow_cache_exists(&key))
+            is_new_conn = true;
 
         /* ================================================================
          * 4. SOCKET
