@@ -1,289 +1,249 @@
-#include <linux/kernel.h>
-#include <linux/ip.h>
-#include <net/ip.h>
-#include <linux/udp.h>
+/**
+ * @file dns_parser.c
+ * @brief DNS response parser for name attribution.
+ * @details The parser walks DNS wire-format packets directly from sk_buffs,
+ * validates each offset before reading, supports compressed and literal names,
+ * and stores A records plus truncated AAAA records in the DNS map. Malformed
+ * packets are ignored silently to keep packet hooks safe.
+ * @author Kernel Traffic Analyzer Project
+ * @license GPL-2.0
+ */
+
+#include <linux/byteorder/generic.h>
+#include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/string.h>
-#include <linux/types.h>
-#include "../include/dns_parser.h"
-#include "../include/dns_map.h"
+#include "../include/kta_api.h"
 
-/* ================================================================
- * DNS WIRE FORMAT (RFC 1035)
- *
- * Header (12 bytes):
- *   ID      2 bytes
- *   Flags   2 bytes  — bit 15 = QR (0=query, 1=response)
- *                     bits 11-8 = opcode
- *                     bit 7 = AA, bit 6 = TC, bit 5 = RD
- *                     bit 4 = RA, bit 0-3 = rcode
- *   QDCOUNT 2 bytes  — number of questions
- *   ANCOUNT 2 bytes  — number of answer RRs
- *   NSCOUNT 2 bytes  — number of authority RRs
- *   ARCOUNT 2 bytes  — number of additional RRs
- *
- * Questions (QDCOUNT times):
- *   QNAME   variable — label sequence
- *   QTYPE   2 bytes
- *   QCLASS  2 bytes
- *
- * Answers (ANCOUNT times):
- *   NAME    variable — label or pointer
- *   TYPE    2 bytes  — 1 = A, 28 = AAAA, 5 = CNAME etc
- *   CLASS   2 bytes
- *   TTL     4 bytes
- *   RDLENGTH 2 bytes
- *   RDATA   RDLENGTH bytes
- * ================================================================ */
-
-#define DNS_QR_MASK 0x8000    /* Response bit in flags */
-#define DNS_RCODE_MASK 0x000F /* Response code         */
-#define DNS_TYPE_A 1          /* IPv4 address record   */
-#define DNS_TYPE_CNAME 5      /* Canonical name        */
-#define DNS_TYPE_AAAA 28      /* IPv6 (we skip these)  */
-#define DNS_CLASS_IN 1        /* Internet class        */
-#define DNS_LABEL_PTR 0xC0    /* Pointer flag (top 2 bits) */
-#define DNS_MAX_NAME 256
-#define DNS_MAX_JUMPS 10 /* limit pointer hops to prevent loops */
-
-/* ================================================================
- * LABEL DECODER
- *
- * Decodes a DNS name from the wire at position *pos within the
- * payload buffer [data, data+len).  Handles pointer compression.
- *
- * Writes the decoded name (dot-separated) into out[0..outsz-1].
- * Returns the new position after the name in the original stream
- * (NOT after the pointer target — the caller must advance past
- * the 2-byte pointer, not past what it points to).
- *
- * Returns -1 on malformed input.
- * ================================================================ */
-static int dns_decode_name(const u8 *data, int len,
-                           int pos, char *out, int outsz)
+/**
+ * dns_read_u8() - Read one byte from an skb.
+ * @skb: Packet buffer.
+ * @offset: Absolute packet offset.
+ * @out: Destination byte.
+ * @return: True on success, otherwise false.
+ * @note: The helper never pulls or linearizes the skb.
+ */
+static bool dns_read_u8(const struct sk_buff *skb, unsigned int offset, u8 *out)
 {
-    int out_pos = 0;
-    int jumped = 0;
-    int jumps = 0;
-    int ret_pos = -1; /* position to return (after original label) */
-
-    if (!data || !out || outsz < 1)
-        return -1;
-
-    out[0] = '\0';
-
-    while (pos < len)
-    {
-        u8 label_len = data[pos];
-
-        if (label_len == 0)
-        {
-            /* End of name */
-            if (!jumped)
-                ret_pos = pos + 1;
-            if (out_pos > 0 && out[out_pos - 1] == '.')
-                out[out_pos - 1] = '\0'; /* strip trailing dot */
-            return ret_pos;
-        }
-
-        if ((label_len & DNS_LABEL_PTR) == DNS_LABEL_PTR)
-        {
-            /* Pointer compression */
-            if (pos + 1 >= len)
-                return -1;
-
-            if (!jumped)
-                ret_pos = pos + 2; /* caller advances 2 bytes for the ptr */
-
-            pos = ((label_len & ~DNS_LABEL_PTR) << 8) | data[pos + 1];
-            jumped = 1;
-            jumps++;
-
-            if (jumps > DNS_MAX_JUMPS)
-                return -1; /* loop guard */
-
-            continue;
-        }
-
-        /* Regular label */
-        pos++;
-
-        if (pos + label_len > len)
-            return -1;
-
-        if (out_pos + label_len + 1 >= outsz)
-            return -1; /* output buffer too small */
-
-        memcpy(out + out_pos, data + pos, label_len);
-        out_pos += label_len;
-        out[out_pos++] = '.';
-
-        pos += label_len;
-    }
-
-    return -1;
+	return skb_copy_bits(skb, offset, out, sizeof(*out)) == 0;
 }
 
-/* ================================================================
- * SKIP A NAME — advance past a name without decoding it
- * ================================================================ */
-static int dns_skip_name(const u8 *data, int len, int pos)
+/**
+ * dns_read_u16() - Read a big-endian 16-bit value from an skb.
+ * @skb: Packet buffer.
+ * @offset: Absolute packet offset.
+ * @out: Destination value in host byte order.
+ * @return: True on success, otherwise false.
+ * @note: DNS fields are network byte order on the wire.
+ */
+static bool dns_read_u16(const struct sk_buff *skb, unsigned int offset, u16 *out)
 {
-    int jumps = 0;
+	__be16 tmp;
 
-    while (pos < len)
-    {
-        u8 b = data[pos];
+	if (skb_copy_bits(skb, offset, &tmp, sizeof(tmp)) != 0)
+		return false;
 
-        if (b == 0)
-            return pos + 1;
-
-        if ((b & DNS_LABEL_PTR) == DNS_LABEL_PTR)
-        {
-            if (pos + 1 >= len)
-                return -1;
-            return pos + 2; /* pointer is always 2 bytes */
-        }
-
-        pos += 1 + b;
-        if (++jumps > DNS_MAX_JUMPS)
-            return -1;
-    }
-
-    return -1;
+	*out = ntohs(tmp);
+	return true;
 }
 
-/* ================================================================
- * MAIN ENTRY POINT
- *
- * Called from netfilter_hook.c for every UDP packet arriving FROM
- * port 53 (DNS response direction).
- *
- * Parses the DNS wire format and inserts every A record it finds
- * into dns_map.
- * ================================================================ */
-bool parse_dns_response(struct sk_buff *skb, pid_t pid, const char *comm)
+/**
+ * dns_skip_name() - Skip a DNS name at a packet offset.
+ * @skb: Packet buffer.
+ * @base: DNS message start offset.
+ * @offset: In/out absolute offset.
+ * @return: True when a syntactically valid name was skipped.
+ * @note: Compression pointers terminate the current encoded name.
+ */
+static bool dns_skip_name(const struct sk_buff *skb, unsigned int base,
+			  unsigned int *offset)
 {
-    struct iphdr *ip;
-    struct udphdr *udp;
-    const u8 *payload;
-    int payload_len;
-    int pos;
+	u8 len;
+	unsigned int pos = *offset;
+	unsigned int depth = 0;
 
-    /* DNS header fields */
-    u16 flags, qdcount, ancount;
-    int i;
-    bool got_record = false;
+	while (pos < skb->len) {
+		if (!dns_read_u8(skb, pos, &len))
+			return false;
+		if ((len & DNS_POINTER_MASK) == DNS_POINTER_VALUE) {
+			u8 next;
 
-    /* ---- Basic pointer validation ---- */
-    if (!skb)
-        return false;
+			if (!dns_read_u8(skb, pos + 1, &next))
+				return false;
+			*offset = pos + DNS_COMPRESSED_NAME_LEN;
+			return (((((u16)(len & ~DNS_POINTER_MASK)) << 8) | next) +
+				base) < skb->len;
+		}
+		if (len == 0) {
+			*offset = pos + 1;
+			return true;
+		}
+		if ((len & DNS_POINTER_MASK) != 0)
+			return false;
+		pos += len + 1;
+		if (pos > skb->len || ++depth > DNS_MAX_POINTER_DEPTH)
+			return false;
+	}
 
-    if (!pskb_may_pull(skb, sizeof(struct iphdr) + sizeof(struct udphdr)))
-        return false;
-
-    ip = ip_hdr(skb);
-    udp = (struct udphdr *)((__u8 *)ip + ip_hdrlen(skb));
-
-    /* DNS payload starts right after the UDP header */
-    payload = (__u8 *)udp + sizeof(struct udphdr);
-    payload_len = ntohs(udp->len) - sizeof(struct udphdr);
-
-    if (payload_len < 12) /* minimum DNS header size */
-        return false;
-
-    /* Ensure the payload is actually in linear memory */
-    if (!pskb_may_pull(skb, ip_hdrlen(skb) +
-                                sizeof(struct udphdr) +
-                                payload_len))
-        return false;
-
-    /* Re-read after potential pull */
-    ip = ip_hdr(skb);
-    udp = (struct udphdr *)((__u8 *)ip + ip_hdrlen(skb));
-    payload = (__u8 *)udp + sizeof(struct udphdr);
-
-    /* ---- Parse DNS header ---- */
-    flags = (payload[2] << 8) | payload[3];
-    qdcount = (payload[4] << 8) | payload[5];
-    ancount = (payload[6] << 8) | payload[7];
-
-    /* Must be a response (QR=1) with no error (RCODE=0) */
-    if (!(flags & DNS_QR_MASK))
-        return false;
-
-    if ((flags & DNS_RCODE_MASK) != 0)
-        return false;
-
-    if (ancount == 0)
-        return false;
-
-    pos = 12; /* skip DNS header */
-
-    /* ---- Skip question section ---- */
-    for (i = 0; i < qdcount; i++)
-    {
-        pos = dns_skip_name(payload, payload_len, pos);
-        if (pos < 0)
-            return false;
-
-        pos += 4; /* QTYPE + QCLASS */
-        if (pos > payload_len)
-            return false;
-    }
-
-    /* ---- Parse answer section ---- */
-    for (i = 0; i < ancount && i < 64; i++)
-    {
-        char name[DNS_MAX_NAME];
-        u16 rr_type, rr_class, rdlength;
-        u32 ttl;
-        int new_pos;
-
-        /* Decode RR name */
-        new_pos = dns_decode_name(payload, payload_len, pos,
-                                  name, sizeof(name));
-        if (new_pos < 0)
-            break;
-        pos = new_pos;
-
-        /* Need at least 10 more bytes: TYPE(2)+CLASS(2)+TTL(4)+RDLEN(2) */
-        if (pos + 10 > payload_len)
-            break;
-
-        rr_type = (payload[pos] << 8) | payload[pos + 1];
-        rr_class = (payload[pos + 2] << 8) | payload[pos + 3];
-        ttl = (payload[pos + 4] << 24) |
-              (payload[pos + 5] << 16) |
-              (payload[pos + 6] << 8) |
-              payload[pos + 7];
-        rdlength = (payload[pos + 8] << 8) | payload[pos + 9];
-        pos += 10;
-
-        if (pos + rdlength > payload_len)
-            break;
-
-        /* We only care about IN class A records (IPv4) */
-        if (rr_type == DNS_TYPE_A &&
-            rr_class == DNS_CLASS_IN &&
-            rdlength == 4)
-        {
-            __be32 ip_addr;
-            memcpy(&ip_addr, payload + pos, 4);
-
-            /*
-             * Insert into dns_map.  TTL capped at DNS_MAP_TTL
-             * to prevent stale entries from living too long.
-             */
-            dns_map_insert(ip_addr, name,
-                           ttl > 0 ? ttl : 60,
-                           pid, comm);
-
-            got_record = true;
-        }
-
-        pos += rdlength;
-    }
-
-    return got_record;
+	return false;
 }
+
+/**
+ * dns_parse_name() - Decode a DNS name into a dotted string.
+ * @skb: Packet buffer.
+ * @base: DNS message start offset.
+ * @offset: In/out absolute offset for the encoded name.
+ * @out: Destination string.
+ * @outlen: Destination string length.
+ * @return: True when decoding succeeded.
+ * @note: The input offset advances past the original encoded name only.
+ */
+static bool dns_parse_name(const struct sk_buff *skb, unsigned int base,
+			   unsigned int *offset, char *out, size_t outlen)
+{
+	unsigned int pos = *offset;
+	unsigned int end = *offset;
+	unsigned int outpos = 0;
+	unsigned int depth = 0;
+	bool jumped = false;
+
+	if (!out || !outlen)
+		return false;
+	out[0] = '\0';
+
+	while (pos < skb->len) {
+		u8 len;
+
+		if (!dns_read_u8(skb, pos, &len))
+			return false;
+		if ((len & DNS_POINTER_MASK) == DNS_POINTER_VALUE) {
+			u8 next;
+			u16 ptr;
+
+			if (!dns_read_u8(skb, pos + 1, &next))
+				return false;
+			ptr = (((u16)(len & ~DNS_POINTER_MASK)) << 8) | next;
+			if (base + ptr >= skb->len || ++depth > DNS_MAX_POINTER_DEPTH)
+				return false;
+			if (!jumped)
+				end = pos + DNS_COMPRESSED_NAME_LEN;
+			pos = base + ptr;
+			jumped = true;
+			continue;
+		}
+		if (len == 0) {
+			if (!jumped)
+				end = pos + 1;
+			break;
+		}
+		if ((len & DNS_POINTER_MASK) != 0 || len > DNS_LABEL_LEN_MASK)
+			return false;
+		pos++;
+		if (pos + len > skb->len)
+			return false;
+		if (outpos && outpos + DNS_LABEL_DOT_LEN < outlen)
+			out[outpos++] = '.';
+		if (outpos + len >= outlen)
+			len = outlen - outpos - 1;
+		if (len && skb_copy_bits(skb, pos, out + outpos, len) != 0)
+			return false;
+		outpos += len;
+		out[outpos] = '\0';
+		pos += len;
+	}
+
+	*offset = end;
+	return out[0] != '\0';
+}
+
+/**
+ * dns_parse_response() - Parse a DNS response and update the DNS map.
+ * @skb: Packet buffer containing a UDP DNS payload.
+ * @data_offset: Absolute offset of the DNS message.
+ * @return: None.
+ * @note: A/AAAA answer names are preferred; the first question name is used as
+ * a fallback when answers use compact owner names.
+ */
+void dns_parse_response(const struct sk_buff *skb, unsigned int data_offset)
+{
+	u16 flags;
+	u16 qdcount;
+	u16 ancount;
+	unsigned int offset;
+	unsigned int idx;
+	char question[MAX_DOMAIN_LEN];
+
+	if (!skb || data_offset + DNS_HEADER_LEN > skb->len)
+		return;
+
+	if (!dns_read_u16(skb, data_offset + 2, &flags) ||
+	    !(flags & DNS_QR_RESPONSE))
+		return;
+	if (!dns_read_u16(skb, data_offset + 4, &qdcount) ||
+	    !dns_read_u16(skb, data_offset + 6, &ancount) || !ancount)
+		return;
+
+	offset = data_offset + DNS_HEADER_LEN;
+	question[0] = '\0';
+	for (idx = 0; idx < qdcount; idx++) {
+		char qname[MAX_DOMAIN_LEN];
+
+		if (!dns_parse_name(skb, data_offset, &offset, qname,
+				    sizeof(qname)))
+			return;
+		if (!question[0])
+			strlcpy(question, qname, sizeof(question));
+		if (offset + DNS_QFIXED_LEN > skb->len)
+			return;
+		offset += DNS_QFIXED_LEN;
+	}
+
+	for (idx = 0; idx < ancount; idx++) {
+		char name[MAX_DOMAIN_LEN];
+		char domain[MAX_DOMAIN_LEN];
+		u16 type;
+		u16 class;
+		u16 rdlen;
+		unsigned int rdata;
+
+		if (!dns_parse_name(skb, data_offset, &offset, name,
+				    sizeof(name)))
+			return;
+		if (offset + DNS_RR_FIXED_LEN > skb->len)
+			return;
+		if (!dns_read_u16(skb, offset, &type) ||
+		    !dns_read_u16(skb, offset + 2, &class) ||
+		    !dns_read_u16(skb, offset + 8, &rdlen))
+			return;
+		rdata = offset + DNS_RR_FIXED_LEN;
+		if (rdata + rdlen > skb->len)
+			return;
+
+		if (name[0])
+			strlcpy(domain, name, sizeof(domain));
+		else
+			strlcpy(domain, question, sizeof(domain));
+
+		if (class == DNS_CLASS_IN && type == DNS_TYPE_A &&
+		    rdlen == DNS_IPV4_RDATA_LEN) {
+			__be32 ip;
+
+			if (skb_copy_bits(skb, rdata, &ip, sizeof(ip)) == 0)
+				dns_map_store(ip, domain);
+		} else if (class == DNS_CLASS_IN && type == DNS_TYPE_AAAA &&
+			   rdlen == DNS_IPV6_RDATA_LEN) {
+			__be32 ip;
+
+			if (skb_copy_bits(skb, rdata + DNS_IPV6_RDATA_LEN -
+					  DNS_IPV4_RDATA_LEN, &ip,
+					  sizeof(ip)) == 0) {
+				pr_info("kta: dns_parser: truncated AAAA %s to %pI4\n",
+					domain, &ip);
+				dns_map_store(ip, domain);
+			}
+		}
+
+		offset = rdata + rdlen;
+	}
+}
+
