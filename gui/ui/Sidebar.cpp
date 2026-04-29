@@ -14,9 +14,9 @@ static const QString STYLE_ACTIVE =
     "  border: none;"
     "  border-left: 2px solid #3794ff;"
     "  text-align: left;"
-    "  padding: 11px 16px 11px 14px;"
+    "  padding: 10px 16px 10px 14px;"
     "  font-size: 14px;"
-    "  font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace;"
+    "  font-family: 'Segoe UI', 'Ubuntu', Arial, sans-serif;"
     "  font-weight: 600;"
     "}";
 
@@ -26,9 +26,9 @@ static const QString STYLE_INACTIVE =
     "  color: #8a8a8a;"
     "  border: none;"
     "  text-align: left;"
-    "  padding: 11px 16px;"
+    "  padding: 10px 16px;"
     "  font-size: 14px;"
-    "  font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace;"
+    "  font-family: 'Segoe UI', 'Ubuntu', Arial, sans-serif;"
     "  font-weight: 400;"
     "}"
     "QPushButton:hover {"
@@ -48,7 +48,7 @@ static const QString STYLE_ACTIVE_ICON =
     "  text-align: center;"
     "  padding: 10px 4px;"
     "  font-size: 15px;"
-    "  font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace;"
+    "  font-family: 'Segoe UI', 'Ubuntu', Arial, sans-serif;"
     "}";
 
 static const QString STYLE_INACTIVE_ICON =
@@ -59,7 +59,7 @@ static const QString STYLE_INACTIVE_ICON =
     "  text-align: center;"
     "  padding: 10px 4px;"
     "  font-size: 15px;"
-    "  font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace;"
+    "  font-family: 'Segoe UI', 'Ubuntu', Arial, sans-serif;"
     "}"
     "QPushButton:hover {"
     "  background-color: #252526;"
@@ -120,7 +120,7 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
 
     m_titleLabel = new QLabel("KTA", m_logoWidget);
     m_titleLabel->setStyleSheet(
-        "color:#cccccc; font-size:16px; font-weight:700;"
+        "color:#ffffff; font-size:15px; font-weight:600; font-family:'Segoe UI','Ubuntu',Arial,sans-serif;"
         "letter-spacing:3px; background:transparent;");
 
     m_subLabel = new QLabel("kernel traffic analyzer", m_logoWidget);
@@ -163,7 +163,7 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
         auto *l = new QLabel(t, this);
         l->setObjectName("SectionTitle");
         l->setStyleSheet(
-            "color:#555555; font-size:11px; font-weight:700;"
+            "color:#555555; font-size:11px; font-weight:700; font-family:'Segoe UI','Ubuntu',Arial,sans-serif; background:transparent;"
             "letter-spacing:2px; padding:10px 16px 3px 16px;"
             "background:transparent;");
         return l;
