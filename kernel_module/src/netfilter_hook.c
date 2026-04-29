@@ -2,8 +2,10 @@
 #include <linux/module.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
+#include <linux/netfilter_ipv6.h>
 #include <linux/skbuff.h>
 #include <linux/ip.h>
+#include <linux/ipv6.h>
 #include <linux/udp.h>
 #include <net/ip.h>
 #include "../include/traffic_analyzer.h"
@@ -13,6 +15,8 @@
 
 static struct nf_hook_ops nfho_out;
 static struct nf_hook_ops nfho_in;
+static struct nf_hook_ops nfho6_out;
+static struct nf_hook_ops nfho6_in;
 
 static inline bool is_valid_ipv4(struct sk_buff *skb)
 {
@@ -36,6 +40,10 @@ static inline bool is_dns_response(struct sk_buff *skb)
 {
     struct iphdr *ip;
     struct udphdr *udp;
+    u8 dns_buf[12];
+    u8 *dns_hdr;
+    int udp_off;
+    int udp_payload_off;
 
     if (!pskb_may_pull(skb, sizeof(struct iphdr) + sizeof(struct udphdr)))
         return false;
@@ -44,8 +52,24 @@ static inline bool is_dns_response(struct sk_buff *skb)
     if (ip->protocol != IPPROTO_UDP)
         return false;
 
-    udp = (struct udphdr *)((__u8 *)ip + ip_hdrlen(skb));
-    return ntohs(udp->source) == 53;
+    udp_off = ip_hdrlen(skb);
+    if (!pskb_may_pull(skb, udp_off + sizeof(struct udphdr)))
+        return false;
+
+    ip = ip_hdr(skb);
+    udp = (struct udphdr *)((__u8 *)ip + udp_off);
+    if (ntohs(udp->source) != 53)
+        return false;
+
+    udp_payload_off = udp_off + sizeof(struct udphdr);
+    if (!pskb_may_pull(skb, udp_payload_off + 12))
+        return false;
+
+    dns_hdr = skb_header_pointer(skb, udp_payload_off, 12, dns_buf);
+    if (!dns_hdr)
+        return false;
+
+    return (dns_hdr[2] & 0x80) != 0;
 }
 
 /*
@@ -75,6 +99,15 @@ static unsigned int packet_out_hook(void *priv,
         return NF_ACCEPT;
 
     parse_packet(skb, false);
+    return NF_ACCEPT;
+}
+
+static unsigned int packet6_out_hook(void *priv,
+                                     struct sk_buff *skb,
+                                     const struct nf_hook_state *state)
+{
+    if (skb)
+        parse_packet(skb, false);
     return NF_ACCEPT;
 }
 
@@ -138,6 +171,15 @@ static unsigned int packet_in_hook(void *priv,
     return NF_ACCEPT;
 }
 
+static unsigned int packet6_in_hook(void *priv,
+                                    struct sk_buff *skb,
+                                    const struct nf_hook_state *state)
+{
+    if (skb)
+        parse_packet(skb, true);
+    return NF_ACCEPT;
+}
+
 /* ================================================================
  * INIT / CLEANUP
  * ================================================================ */
@@ -170,12 +212,43 @@ int net_hook_init(void)
         return ret;
     }
 
-    printk(KERN_INFO "[traffic_analyzer] Netfilter hooks registered (LOCAL_IN/OUT)\n");
+    nfho6_out.hook = packet6_out_hook;
+    nfho6_out.pf = NFPROTO_IPV6;
+    nfho6_out.hooknum = NF_INET_LOCAL_OUT;
+    nfho6_out.priority = NF_IP6_PRI_FIRST;
+
+    ret = nf_register_net_hook(&init_net, &nfho6_out);
+    if (ret)
+    {
+        printk(KERN_ERR "[TA] Failed to register IPv6 LOCAL_OUT hook\n");
+        nf_unregister_net_hook(&init_net, &nfho_in);
+        nf_unregister_net_hook(&init_net, &nfho_out);
+        return ret;
+    }
+
+    nfho6_in.hook = packet6_in_hook;
+    nfho6_in.pf = NFPROTO_IPV6;
+    nfho6_in.hooknum = NF_INET_LOCAL_IN;
+    nfho6_in.priority = NF_IP6_PRI_FIRST;
+
+    ret = nf_register_net_hook(&init_net, &nfho6_in);
+    if (ret)
+    {
+        printk(KERN_ERR "[TA] Failed to register IPv6 LOCAL_IN hook\n");
+        nf_unregister_net_hook(&init_net, &nfho6_out);
+        nf_unregister_net_hook(&init_net, &nfho_in);
+        nf_unregister_net_hook(&init_net, &nfho_out);
+        return ret;
+    }
+
+    printk(KERN_INFO "[traffic_analyzer] Netfilter hooks registered (IPv4/IPv6 LOCAL_IN/OUT)\n");
     return 0;
 }
 
 void net_hook_cleanup(void)
 {
+    nf_unregister_net_hook(&init_net, &nfho6_in);
+    nf_unregister_net_hook(&init_net, &nfho6_out);
     nf_unregister_net_hook(&init_net, &nfho_out);
     nf_unregister_net_hook(&init_net, &nfho_in);
     printk(KERN_INFO "[traffic_analyzer] Netfilter hooks removed\n");
