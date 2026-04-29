@@ -4,6 +4,7 @@
 #include <linux/string.h>
 #include <linux/timekeeping.h>
 #include <linux/in.h>
+#include <linux/list.h>
 #include "../include/traffic_analyzer.h"
 #include "../include/dns_map.h"
 #include "../include/route_store.h"
@@ -36,6 +37,124 @@ static struct
  */
 #define UPDATE_RATE_THRESHOLD 10 /* percent change to trigger update */
 #define UPDATE_MAX_INTERVAL 5    /* seconds between forced updates   */
+
+enum pending_nl_type
+{
+    PENDING_NL_CONN_NEW,
+    PENDING_NL_CONN_UPDATE,
+    PENDING_NL_CONN_CLOSED,
+    PENDING_NL_ANOMALY,
+};
+
+struct pending_nl_event
+{
+    struct list_head list;
+    enum pending_nl_type type;
+    union
+    {
+        struct traffic_entry conn;
+        struct proc_entry proc;
+    } u;
+};
+
+struct pending_route_request
+{
+    struct list_head list;
+    __be32 ip;
+    char domain[DOMAIN_NAME_MAX];
+    bool has_domain;
+};
+
+struct pending_events
+{
+    struct list_head nl_events;
+    struct list_head route_requests;
+    struct list_head expired_closed;
+};
+
+static void pending_events_init(struct pending_events *events)
+{
+    INIT_LIST_HEAD(&events->nl_events);
+    INIT_LIST_HEAD(&events->route_requests);
+    INIT_LIST_HEAD(&events->expired_closed);
+}
+
+static void queue_nl_event(struct pending_events *events,
+                           struct pending_nl_event *event,
+                           enum pending_nl_type type,
+                           const struct traffic_entry *conn,
+                           const struct proc_entry *proc)
+{
+    if (!event)
+        return;
+
+    event->type = type;
+    if (conn)
+        event->u.conn = *conn;
+    if (proc)
+        event->u.proc = *proc;
+    list_add_tail(&event->list, &events->nl_events);
+}
+
+static void queue_route_request(struct pending_events *events,
+                                struct pending_route_request *request,
+                                __be32 ip,
+                                const char *domain)
+{
+    if (!request)
+        return;
+
+    request->ip = ip;
+    request->has_domain = domain && domain[0];
+    if (request->has_domain)
+        strscpy(request->domain, domain, sizeof(request->domain));
+    else
+        request->domain[0] = '\0';
+    list_add_tail(&request->list, &events->route_requests);
+}
+
+static void flush_pending_events(struct pending_events *events)
+{
+    struct pending_nl_event *event, *event_tmp;
+    struct pending_route_request *request, *request_tmp;
+    struct traffic_node *closed, *closed_tmp;
+
+    list_for_each_entry_safe(event, event_tmp, &events->nl_events, list)
+    {
+        list_del(&event->list);
+        switch (event->type)
+        {
+        case PENDING_NL_CONN_NEW:
+            ta_nl_send_conn_new(&event->u.conn);
+            break;
+        case PENDING_NL_CONN_UPDATE:
+            ta_nl_send_conn_update(&event->u.conn);
+            break;
+        case PENDING_NL_CONN_CLOSED:
+            ta_nl_send_conn_closed(&event->u.conn);
+            break;
+        case PENDING_NL_ANOMALY:
+            ta_nl_send_anomaly(&event->u.proc);
+            break;
+        }
+        kfree(event);
+    }
+
+    list_for_each_entry_safe(closed, closed_tmp, &events->expired_closed, list)
+    {
+        list_del(&closed->list);
+        ta_nl_send_conn_closed(&closed->entry);
+        kfree(closed);
+    }
+
+    list_for_each_entry_safe(request, request_tmp, &events->route_requests, list)
+    {
+        list_del(&request->list);
+        route_store_request(request->ip,
+                            request->has_domain ? request->domain : NULL);
+        kfree(request);
+    }
+}
 
 /* ================================================================
  * TTL PER STATE
@@ -301,7 +420,11 @@ static void update_top_conns(struct proc_entry *pe,
 /* ================================================================
  * REBUILD PROC LIST
  * ================================================================ */
-static void rebuild_proc_list_locked(u64 now)
+static void rebuild_proc_list_locked(u64 now,
+                                     struct pending_events *events,
+                                     struct pending_nl_event **event_slots,
+                                     int *event_slot_idx,
+                                     int event_slot_count)
 {
     struct traffic_node *tnode;
     struct proc_node *pnode, *ptmp;
@@ -408,16 +531,14 @@ static void rebuild_proc_list_locked(u64 now)
 
         pe->anomaly_flags = detect_anomalies(pe);
 
-        /*
-         * PHASE 6: Emit anomaly netlink event when flags change.
-         * Drop stats_lock briefly — ta_nl_send_anomaly is GFP_ATOMIC.
-         * We can do this because we hold spin_lock_bh which prevents
-         * re-entry from the same CPU's softirq.
-         */
         if (pe->anomaly_flags != ANOMALY_NONE &&
             pe->anomaly_flags != old_flags)
         {
-            ta_nl_send_anomaly(pe);
+            if (*event_slot_idx < event_slot_count)
+            {
+                queue_nl_event(events, event_slots[(*event_slot_idx)++],
+                               PENDING_NL_ANOMALY, NULL, pe);
+            }
         }
     }
 }
@@ -442,6 +563,11 @@ void stats_update(pid_t pid,
 {
     struct traffic_node *node;
     u64 now = ktime_get_real_seconds();
+    struct pending_events events;
+    struct pending_nl_event *event_slots[3] = {NULL, NULL, NULL};
+    struct pending_route_request *route_slot = NULL;
+    struct traffic_node *new_node = NULL;
+    int event_slot_idx = 0;
     bool dns_flag = is_internal_dns(dest_ip, dest_port) ||
                     is_internal_dns(src_ip, src_port);
 
@@ -453,6 +579,14 @@ void stats_update(pid_t pid,
     u16 c_dst_port = dest_port;
     make_canonical(&c_src_ip, &c_src_port, &c_dst_ip, &c_dst_port);
 
+    pending_events_init(&events);
+
+    event_slots[0] = kmalloc(sizeof(*event_slots[0]), GFP_ATOMIC);
+    event_slots[1] = kmalloc(sizeof(*event_slots[1]), GFP_ATOMIC);
+    event_slots[2] = kmalloc(sizeof(*event_slots[2]), GFP_ATOMIC);
+    route_slot = kmalloc(sizeof(*route_slot), GFP_ATOMIC);
+    new_node = kmalloc(sizeof(*new_node), GFP_ATOMIC);
+
     spin_lock_bh(&stats_lock);
 
     if (now - last_cleanup >= 1)
@@ -463,20 +597,17 @@ void stats_update(pid_t pid,
         {
             if (now - node->entry.last_seen > entry_ttl(&node->entry))
             {
-                /*
-                 * PHASE 6: Emit CONN_CLOSED before freeing.
-                 * The entry is still valid at this point.
-                 */
-                if (node->entry.state != CONN_STATE_CLOSED)
-                    ta_nl_send_conn_closed(&node->entry);
-
                 list_del(&node->list);
-                kfree(node);
                 traffic_entries--;
+                if (node->entry.state != CONN_STATE_CLOSED)
+                    list_add_tail(&node->list, &events.expired_closed);
+                else
+                    kfree(node);
             }
         }
 
-        rebuild_proc_list_locked(now);
+        rebuild_proc_list_locked(now, &events, event_slots, &event_slot_idx,
+                                 ARRAY_SIZE(event_slots));
         last_cleanup = now;
     }
 
@@ -524,8 +655,9 @@ void stats_update(pid_t pid,
         if (!e->route_requested && !e->is_dns && protocol == IPPROTO_TCP)
         {
             e->route_requested = true;
-            route_store_request(remote_ip,
+            queue_route_request(&events, route_slot, remote_ip,
                                 e->domain[0] ? e->domain : NULL);
+            route_slot = NULL;
         }
 
         /*
@@ -540,14 +672,18 @@ void stats_update(pid_t pid,
         if (e->state == CONN_STATE_CLOSED &&
             old_state != CONN_STATE_CLOSED)
         {
-            ta_nl_send_conn_closed(e);
+            if (event_slot_idx < ARRAY_SIZE(event_slots))
+                queue_nl_event(&events, event_slots[event_slot_idx++],
+                               PENDING_NL_CONN_CLOSED, e, NULL);
         }
         else if (should_send_update(e, now))
         {
             e->nl_last_rate_out = e->rate.rate_out_bps;
             e->nl_last_rate_in = e->rate.rate_in_bps;
             e->nl_last_update = now;
-            ta_nl_send_conn_update(e);
+            if (event_slot_idx < ARRAY_SIZE(event_slots))
+                queue_nl_event(&events, event_slots[event_slot_idx++],
+                               PENDING_NL_CONN_UPDATE, e, NULL);
         }
 
         if (is_new_conn && !dns_flag)
@@ -564,8 +700,7 @@ void stats_update(pid_t pid,
             }
         }
 
-        spin_unlock_bh(&stats_lock);
-        return;
+        goto out_unlock;
     }
 
     /* New entry */
@@ -576,13 +711,13 @@ void stats_update(pid_t pid,
     {
         struct traffic_node *oldest =
             list_first_entry(&traffic_list, struct traffic_node, list);
-        ta_nl_send_conn_closed(&oldest->entry);
         list_del(&oldest->list);
-        kfree(oldest);
         traffic_entries--;
+        list_add_tail(&oldest->list, &events.expired_closed);
     }
 
-    node = kmalloc(sizeof(*node), GFP_ATOMIC);
+    node = new_node;
+    new_node = NULL;
     if (!node)
         goto out_unlock;
 
@@ -623,17 +758,17 @@ void stats_update(pid_t pid,
     list_add_tail(&node->list, &traffic_list);
     traffic_entries++;
 
-    /* PHASE 6: Emit CONN_NEW immediately */
-    ta_nl_send_conn_new(&node->entry);
+    if (event_slot_idx < ARRAY_SIZE(event_slots))
+        queue_nl_event(&events, event_slots[event_slot_idx++],
+                       PENDING_NL_CONN_NEW, &node->entry, NULL);
 
     /* Route request */
     if (!dns_flag && protocol == IPPROTO_TCP)
     {
         node->entry.route_requested = true;
-        route_store_request(remote_ip,
-                            node->entry.domain[0]
-                                ? node->entry.domain
-                                : NULL);
+        queue_route_request(&events, route_slot, remote_ip,
+                            node->entry.domain[0] ? node->entry.domain : NULL);
+        route_slot = NULL;
     }
 
     if (!dns_flag)
@@ -654,6 +789,12 @@ void stats_update(pid_t pid,
 
 out_unlock:
     spin_unlock_bh(&stats_lock);
+    flush_pending_events(&events);
+
+    while (event_slot_idx < ARRAY_SIZE(event_slots))
+        kfree(event_slots[event_slot_idx++]);
+    kfree(route_slot);
+    kfree(new_node);
 }
 
 /* ================================================================
