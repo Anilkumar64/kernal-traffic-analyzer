@@ -71,7 +71,7 @@ void dns_map_insert(__be32 ip, const char *name, u32 ttl,
             {
                 spin_unlock(&dns_lock);
                 kfree(entry);
-                goto notify;
+                return;
             }
         }
     }
