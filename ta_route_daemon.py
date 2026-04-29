@@ -173,8 +173,8 @@ def trace_route(route: PendingRoute, geo: GeoIp) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Kernel Traffic Analyzer route daemon")
     parser.add_argument("--poll-interval", type=float, default=2.0)
-    parser.add_argument("--city-db", type=Path)
-    parser.add_argument("--asn-db", type=Path)
+    parser.add_argument("--city-db", type=Path, default=Path("/usr/share/GeoIP/GeoLite2-City.mmdb"))
+    parser.add_argument("--asn-db", type=Path, default=Path("/usr/share/GeoIP/GeoLite2-ASN.mmdb"))
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
