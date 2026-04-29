@@ -1,220 +1,218 @@
-#include <linux/kernel.h>
-#include <linux/slab.h>
-#include <linux/sched.h>
-#include <linux/mm.h>
-#include <linux/fs.h>
-#include <linux/file.h> /* fput() */
+/**
+ * @file exe_resolver.c
+ * @brief PID executable path resolver with TTL cache.
+ * @details Executable resolution can sleep and is therefore isolated from the
+ * hot packet path. The cache stores /proc/<pid>/exe d_path results for a short
+ * TTL, handles dead processes and kernel threads gracefully, and bounds all
+ * string copies for /proc consumers.
+ * @author Kernel Traffic Analyzer Project
+ * @license GPL-2.0
+ */
+
 #include <linux/dcache.h>
-#include <linux/spinlock.h>
+#include <linux/err.h>
+#include <linux/fs.h>
 #include <linux/hashtable.h>
-#include <linux/rcupdate.h>
-#include <linux/pid.h>
-#include "../include/exe_resolver.h"
-#include "../include/traffic_analyzer.h"
+#include <linux/namei.h>
+#include <linux/path.h>
+#include <linux/sched.h>
+#include <linux/slab.h>
+#include <linux/spinlock.h>
+#include <linux/string.h>
+#include "../include/kta_api.h"
 
-/* ================================================================
- * EXE PATH READER
- *
- * task->mm->exe_file is the struct file* for the running binary.
- * d_path() walks the dentry tree to produce the full path string.
- *
- * get_mm_exe_file() was removed from exported symbols in kernel 6.7.
- * On 6.8 we read mm->exe_file directly under rcu_read_lock() and
- * bump its refcount with get_file() before dropping the lock.
- *
- * This function must run in process context (workqueue thread) —
- * d_path() can sleep via dentry cache operations.
- * ================================================================ */
-bool get_exe_path(pid_t pid, char *buf, size_t bufsz)
-{
-    struct pid *p;
-    struct task_struct *task;
-    struct mm_struct *mm = NULL;
-    struct file *exe_file = NULL;
-    char *tmp;
-    char *path;
-    bool ok = false;
-
-    if (!buf || !bufsz)
-        return false;
-
-    buf[0] = '\0';
-
-    /* ---- locate task and get a stable mm reference ---- */
-    rcu_read_lock();
-
-    p = find_get_pid(pid);
-    if (!p)
-        goto out_rcu;
-
-    task = pid_task(p, PIDTYPE_PID);
-    put_pid(p);
-
-    if (!task)
-        goto out_rcu;
-
-    /*
-     * get_task_mm() bumps mm->mm_users so the mm stays alive
-     * after we drop the RCU lock.
-     */
-    mm = get_task_mm(task);
-
-out_rcu:
-    rcu_read_unlock();
-
-    if (!mm)
-        return false;
-
-    /*
-     * Read mm->exe_file under rcu_read_lock and bump its refcount
-     * with get_file() so it stays alive for d_path().
-     *
-     * get_mm_exe_file() is no longer exported in kernel ≥ 6.7 so we
-     * replicate its logic: lock RCU, read the pointer, get_file().
-     */
-    rcu_read_lock();
-    exe_file = rcu_dereference(mm->exe_file);
-    if (exe_file)
-        exe_file = get_file(exe_file); /* bumps f_count */
-    rcu_read_unlock();
-
-    mmput(mm);
-
-    if (!exe_file)
-        return false;
-
-    /* d_path() writes backwards into tmp; result ptr is inside tmp */
-    tmp = kmalloc(bufsz, GFP_KERNEL);
-    if (!tmp)
-    {
-        fput(exe_file);
-        return false;
-    }
-
-    path = d_path(&exe_file->f_path, tmp, bufsz);
-    fput(exe_file);
-
-    if (!IS_ERR(path))
-    {
-        strscpy(buf, path, bufsz);
-        ok = true;
-    }
-
-    kfree(tmp);
-    return ok;
-}
-
-/* ================================================================
- * EXE CACHE — PID → path hash table
- *
- * exe paths are expensive to read.  We cache them so repeated
- * packets for the same process don't re-walk the dentry tree.
- *
- * Invalidation: when pid_is_alive() returns false for a cached PID,
- * the caller in packet_parser removes it via exe_cache_invalidate().
- * ================================================================ */
-#define EXE_CACHE_BITS 8
-
-struct exe_entry
-{
-    pid_t pid;
-    char path[EXE_PATH_MAX];
-    struct hlist_node node;
-};
-
-static DEFINE_HASHTABLE(exe_cache, EXE_CACHE_BITS);
+static DEFINE_HASHTABLE(exe_hash, EXE_CACHE_HASH_BITS);
 static DEFINE_SPINLOCK(exe_cache_lock);
+static u32 exe_cache_entries;
 
-void exe_cache_init(void)
+/**
+ * exe_cache_init() - Initialize executable path cache state.
+ * @return: Zero on success.
+ * @note: Entries are allocated only after successful or meaningful lookups.
+ */
+int exe_cache_init(void)
 {
-    hash_init(exe_cache);
+	hash_init(exe_hash);
+	exe_cache_entries = 0;
+	return 0;
 }
 
-void exe_cache_insert(pid_t pid, const char *path)
+/**
+ * exe_cache_exit() - Free all executable cache entries.
+ * @return: None.
+ * @note: Called when no /proc readers can use this module state.
+ */
+void exe_cache_exit(void)
 {
-    struct exe_entry *entry, *cur;
+	struct exe_cache_entry *entry;
+	struct hlist_node *tmp;
+	unsigned int bucket;
 
-    if (!pid || !path || !path[0])
-        return;
-
-    entry = kmalloc(sizeof(*entry), GFP_ATOMIC);
-    if (!entry)
-        return;
-
-    entry->pid = pid;
-    strscpy(entry->path, path, EXE_PATH_MAX);
-
-    spin_lock(&exe_cache_lock);
-
-    /* Check for duplicate inside lock to avoid TOCTOU race */
-    hash_for_each_possible(exe_cache, cur, node, (unsigned long)pid)
-    {
-        if (cur->pid == pid)
-        {
-            spin_unlock(&exe_cache_lock);
-            kfree(entry);
-            return;
-        }
-    }
-
-    hash_add(exe_cache, &entry->node, (unsigned long)pid);
-    spin_unlock(&exe_cache_lock);
+	spin_lock_bh(&exe_cache_lock);
+	hash_for_each_safe(exe_hash, bucket, tmp, entry, hnode) {
+		hash_del(&entry->hnode);
+		kfree(entry);
+	}
+	exe_cache_entries = 0;
+	spin_unlock_bh(&exe_cache_lock);
 }
 
-bool exe_cache_lookup(pid_t pid, char *buf, size_t bufsz)
+/**
+ * exe_cache_evict_one_locked() - Evict one expired or oldest executable entry.
+ * @return: None.
+ * @note: Caller must hold exe_cache_lock.
+ */
+static void exe_cache_evict_one_locked(void)
 {
-    struct exe_entry *entry;
-    bool found = false;
+	struct exe_cache_entry *entry;
+	struct exe_cache_entry *oldest = NULL;
+	unsigned int bucket;
 
-    spin_lock(&exe_cache_lock);
-
-    hash_for_each_possible(exe_cache, entry, node, (unsigned long)pid)
-    {
-        if (entry->pid != pid)
-            continue;
-        if (buf && bufsz)
-            strscpy(buf, entry->path, bufsz);
-        found = true;
-        break;
-    }
-
-    spin_unlock(&exe_cache_lock);
-    return found;
+	hash_for_each(exe_hash, bucket, entry, hnode) {
+		if (!oldest ||
+		    time_before(entry->cached_jiffies, oldest->cached_jiffies))
+			oldest = entry;
+	}
+	if (oldest) {
+		hash_del(&oldest->hnode);
+		kfree(oldest);
+		if (exe_cache_entries)
+			exe_cache_entries--;
+	}
 }
 
-void exe_cache_invalidate(pid_t pid)
+/**
+ * exe_cache_lookup_locked() - Look up a valid executable cache entry.
+ * @pid: PID to resolve.
+ * @out: Destination path buffer.
+ * @outlen: Destination buffer length.
+ * @return: True on valid cache hit.
+ * @note: Expired hits are removed before returning false.
+ */
+static bool exe_cache_lookup_locked(pid_t pid, char *out, size_t outlen)
 {
-    struct exe_entry *entry;
-    struct hlist_node *tmp;
+	struct exe_cache_entry *entry;
+	struct hlist_node *tmp;
 
-    spin_lock(&exe_cache_lock);
+	hash_for_each_possible_safe(exe_hash, entry, tmp, hnode, (u32)pid) {
+		if (entry->pid != pid)
+			continue;
+		if (time_after(jiffies,
+			       entry->cached_jiffies + EXE_CACHE_TTL_SECS * HZ)) {
+			hash_del(&entry->hnode);
+			kfree(entry);
+			if (exe_cache_entries)
+				exe_cache_entries--;
+			return false;
+		}
+		strlcpy(out, entry->path, outlen);
+		return true;
+	}
 
-    hash_for_each_possible_safe(exe_cache, entry, tmp, node, (unsigned long)pid)
-    {
-        if (entry->pid == pid)
-        {
-            hash_del(&entry->node);
-            kfree(entry);
-            break;
-        }
-    }
-
-    spin_unlock(&exe_cache_lock);
+	return false;
 }
 
-void exe_cache_cleanup(void)
+/**
+ * exe_cache_store() - Store a PID executable path.
+ * @pid: PID key.
+ * @path: Path string to cache.
+ * @return: None.
+ * @note: Caller may pass "unknown" for graceful negative caching.
+ */
+static void exe_cache_store(pid_t pid, const char *path)
 {
-    struct exe_entry *entry;
-    struct hlist_node *tmp;
-    int bkt;
+	struct exe_cache_entry *entry;
 
-    spin_lock(&exe_cache_lock);
+	if (pid <= 0 || !path)
+		return;
 
-    hash_for_each_safe(exe_cache, bkt, tmp, entry, node)
-    {
-        hash_del(&entry->node);
-        kfree(entry);
-    }
+	spin_lock_bh(&exe_cache_lock);
+	hash_for_each_possible(exe_hash, entry, hnode, (u32)pid) {
+		if (entry->pid == pid) {
+			strlcpy(entry->path, path, sizeof(entry->path));
+			entry->cached_jiffies = jiffies;
+			spin_unlock_bh(&exe_cache_lock);
+			return;
+		}
+	}
 
-    spin_unlock(&exe_cache_lock);
+	if (exe_cache_entries >= MAX_EXE_CACHE_ENTRIES)
+		exe_cache_evict_one_locked();
+
+	entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
+	if (!entry) {
+		spin_unlock_bh(&exe_cache_lock);
+		pr_err("kta: exe_resolver: allocation failed\n");
+		return;
+	}
+	entry->pid = pid;
+	strlcpy(entry->path, path, sizeof(entry->path));
+	entry->cached_jiffies = jiffies;
+	hash_add(exe_hash, &entry->hnode, (u32)pid);
+	exe_cache_entries++;
+	spin_unlock_bh(&exe_cache_lock);
 }
+
+/**
+ * exe_cache_get() - Resolve and cache a PID executable path.
+ * @pid: PID to resolve.
+ * @out: Destination buffer.
+ * @outlen: Destination buffer length.
+ * @return: None.
+ * @note: On cache miss this may sleep, so callers must avoid hook/atomic paths.
+ */
+void exe_cache_get(pid_t pid, char *out, size_t outlen)
+{
+	struct path exe_path;
+	char proc_path[64];
+	char *page;
+	char *resolved;
+	int ret;
+
+	if (!out || !outlen)
+		return;
+	strlcpy(out, "unknown", outlen);
+	if (pid <= 0)
+		return;
+
+	spin_lock_bh(&exe_cache_lock);
+	if (exe_cache_lookup_locked(pid, out, outlen)) {
+		spin_unlock_bh(&exe_cache_lock);
+		return;
+	}
+	spin_unlock_bh(&exe_cache_lock);
+
+	if (in_atomic() || irqs_disabled())
+		return;
+
+	snprintf(proc_path, sizeof(proc_path), "/proc/%d/exe", pid);
+	ret = kern_path(proc_path, LOOKUP_FOLLOW, &exe_path);
+	if (ret) {
+		if (ret != -ESRCH && ret != -ENOENT)
+			pr_err("kta: exe_resolver: kern_path failed for pid %d: %d\n",
+			       pid, ret);
+		exe_cache_store(pid, "unknown");
+		return;
+	}
+
+	page = (char *)__get_free_page(GFP_KERNEL);
+	if (!page) {
+		path_put(&exe_path);
+		pr_err("kta: exe_resolver: path buffer allocation failed\n");
+		return;
+	}
+
+	resolved = d_path(&exe_path, page, PAGE_SIZE);
+	if (IS_ERR(resolved)) {
+		pr_err("kta: exe_resolver: d_path failed for pid %d\n", pid);
+		strlcpy(out, "unknown", outlen);
+		exe_cache_store(pid, "unknown");
+	} else {
+		strlcpy(out, resolved, outlen);
+		exe_cache_store(pid, resolved);
+	}
+
+	free_page((unsigned long)page);
+	path_put(&exe_path);
+}
+

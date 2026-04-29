@@ -1,420 +1,268 @@
-#include <linux/rcupdate.h>
-#include <linux/fdtable.h>
-#include <linux/sched.h>
-#include <linux/fs.h>
-#include <linux/workqueue.h>
-#include <linux/slab.h>
-#include <linux/socket.h>
-#include <linux/hash.h>
-#include <linux/spinlock.h>
+/**
+ * @file resolver.c
+ * @brief Asynchronous flow-to-PID resolver.
+ * @details Hook-time attribution cannot sleep, so unresolved flow keys are
+ * queued to system_wq. Worker jobs inspect /proc/net socket tables to find a
+ * matching inode and then scan task file tables for the owning process before
+ * updating inode and flow caches.
+ * @author Kernel Traffic Analyzer Project
+ * @license GPL-2.0
+ */
+
 #include <linux/atomic.h>
-#include <net/sock.h>
-#include "../include/cache.h"
-#include "../include/inode_cache.h"
-#include "../include/sock_cache.h"
-#include "../include/exe_resolver.h"
-#include "../include/resolver.h"
-#include "../include/traffic_analyzer.h"
+#include <linux/fdtable.h>
+#include <linux/file.h>
+#include <linux/fs.h>
+#include <linux/net.h>
+#include <linux/sched/signal.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/workqueue.h>
+#include "../include/kta_api.h"
 
-static struct workqueue_struct *resolver_wq;
-
-#define RESOLVER_INFLIGHT_BITS 8
-#define RESOLVER_INFLIGHT_BUCKETS (1U << RESOLVER_INFLIGHT_BITS)
-#define RESOLVER_INFLIGHT_MAX 256
-#define RESOLVER_QUEUE_MAX 128
-#define MAX_RESOLVER_WORKERS 4
-
-enum resolver_work_type
-{
-    RESOLVE_WORK_SOCKET = 1,
-    RESOLVE_WORK_EXE = 2,
+struct resolver_work {
+	struct work_struct work;
+	struct flow_key key;
 };
 
-struct inflight_entry
-{
-    struct hlist_node node;
-    unsigned long key;
-};
+static atomic_t resolver_inflight = ATOMIC_INIT(0);
 
-static DEFINE_SPINLOCK(inflight_lock);
-static struct hlist_head inflight[RESOLVER_INFLIGHT_BUCKETS];
-static unsigned int inflight_count;
-static atomic_t resolver_queue_depth = ATOMIC_INIT(0);
-static atomic_t dropped_resolutions = ATOMIC_INIT(0);
-
-static unsigned int inflight_bucket(unsigned long key)
+/**
+ * resolver_init() - Initialize async resolver state.
+ * @return: Zero on success.
+ * @note: Work is queued on system_wq; no private workqueue is allocated.
+ */
+int resolver_init(void)
 {
-    return hash_long(key, RESOLVER_INFLIGHT_BITS);
+	atomic_set(&resolver_inflight, 0);
+	return 0;
 }
 
-static unsigned long inflight_key(enum resolver_work_type type,
-                                  unsigned long value)
+/**
+ * resolver_exit() - Drain pending resolver work.
+ * @return: None.
+ * @note: Ensures queued jobs cannot update caches after teardown proceeds.
+ */
+void resolver_exit(void)
 {
-    return (value << 2) ^ type;
+	flush_scheduled_work();
+	atomic_set(&resolver_inflight, 0);
 }
 
-static bool inflight_try_add(unsigned long key)
+/**
+ * resolver_parse_ipv4_hex() - Convert /proc/net/tcp IPv4 hex to __be32.
+ * @hex: Parsed little-endian hex address.
+ * @return: IPv4 address in network byte order.
+ * @note: /proc/net/tcp prints IPv4 addresses as host-order hex words.
+ */
+static __be32 resolver_parse_ipv4_hex(unsigned int hex)
 {
-    struct inflight_entry *entry;
-    unsigned int bucket = inflight_bucket(key);
-
-    spin_lock(&inflight_lock);
-
-    if (inflight_count >= RESOLVER_INFLIGHT_MAX ||
-        atomic_read(&resolver_queue_depth) >= RESOLVER_QUEUE_MAX)
-    {
-        atomic_inc(&dropped_resolutions);
-        spin_unlock(&inflight_lock);
-        return false;
-    }
-
-    hlist_for_each_entry(entry, &inflight[bucket], node)
-    {
-        if (entry->key == key)
-        {
-            spin_unlock(&inflight_lock);
-            return false;
-        }
-    }
-
-    entry = kmalloc(sizeof(*entry), GFP_ATOMIC);
-    if (!entry)
-    {
-        atomic_inc(&dropped_resolutions);
-        spin_unlock(&inflight_lock);
-        return false;
-    }
-
-    entry->key = key;
-    hlist_add_head(&entry->node, &inflight[bucket]);
-    inflight_count++;
-    atomic_inc(&resolver_queue_depth);
-
-    spin_unlock(&inflight_lock);
-    return true;
+	return htonl(hex);
 }
 
-static void inflight_remove(unsigned long key)
+/**
+ * resolver_parse_tcp_table() - Scan a /proc/net TCP table for a flow inode.
+ * @path: Path to the proc table.
+ * @key: Canonical flow key to match.
+ * @inode: Destination inode when found.
+ * @is_ipv6: True when parsing /proc/net/tcp6.
+ * @return: True when an inode was found.
+ * @note: The file is read into a bounded kernel buffer using kernel_read().
+ */
+static bool resolver_parse_tcp_table(const char *path, const struct flow_key *key,
+				     unsigned long *inode, bool is_ipv6)
 {
-    struct inflight_entry *entry;
-    struct hlist_node *tmp;
-    unsigned int bucket = inflight_bucket(key);
+	struct file *file;
+	char *buf;
+	loff_t pos = 0;
+	ssize_t read;
+	size_t used = 0;
+	bool found = false;
 
-    spin_lock(&inflight_lock);
+	file = filp_open(path, O_RDONLY, 0);
+	if (IS_ERR(file))
+		return false;
 
-    hlist_for_each_entry_safe(entry, tmp, &inflight[bucket], node)
-    {
-        if (entry->key == key)
-        {
-            hlist_del(&entry->node);
-            kfree(entry);
-            if (inflight_count > 0)
-                inflight_count--;
-            atomic_dec_if_positive(&resolver_queue_depth);
-            break;
-        }
-    }
+	buf = kzalloc(RESOLVER_MAX_FILE_BYTES, GFP_KERNEL);
+	if (!buf) {
+		filp_close(file, NULL);
+		pr_err("kta: resolver: allocation failed reading %s\n", path);
+		return false;
+	}
 
-    spin_unlock(&inflight_lock);
+	while (used + RESOLVER_READ_CHUNK < RESOLVER_MAX_FILE_BYTES) {
+		read = kernel_read(file, buf + used, RESOLVER_READ_CHUNK, &pos);
+		if (read <= 0)
+			break;
+		used += read;
+	}
+	buf[used] = '\0';
+
+	{
+		char *line = buf;
+		char *next;
+
+		while (line && *line) {
+			unsigned int lip = 0;
+			unsigned int rip = 0;
+			unsigned int lp = 0;
+			unsigned int rp = 0;
+			unsigned long ino = 0;
+			__be32 local_ip = 0;
+			__be32 remote_ip = 0;
+			struct flow_key candidate = { };
+			char l6[PROC_NET_TCP6_HEX_LEN + 1];
+			char r6[PROC_NET_TCP6_HEX_LEN + 1];
+
+			next = strchr(line, '\n');
+			if (next)
+				*next++ = '\0';
+
+			if (!is_ipv6) {
+				if (sscanf(line,
+					   " %*u: %x:%x %x:%x %*x %*s %*s %*s %*u %*u %lu",
+					   &lip, &lp, &rip, &rp, &ino) >= 5) {
+					local_ip = resolver_parse_ipv4_hex(lip);
+					remote_ip = resolver_parse_ipv4_hex(rip);
+				}
+			} else {
+				l6[0] = '\0';
+				r6[0] = '\0';
+				if (sscanf(line,
+					   " %*u: %32s:%x %32s:%x %*x %*s %*s %*s %*u %*u %lu",
+					   l6, &lp, r6, &rp, &ino) >= 5) {
+					unsigned int llast = 0;
+					unsigned int rlast = 0;
+
+					sscanf(l6 + 24, "%x", &llast);
+					sscanf(r6 + 24, "%x", &rlast);
+					local_ip = htonl(llast);
+					remote_ip = htonl(rlast);
+				}
+			}
+
+			if (ino) {
+				candidate.src_ip = local_ip;
+				candidate.dst_ip = remote_ip;
+				candidate.src_port = htons((u16)lp);
+				candidate.dst_port = htons((u16)rp);
+				candidate.protocol = IPPROTO_TCP;
+				make_canonical(&candidate);
+				if (memcmp(&candidate, key, sizeof(candidate)) == 0) {
+					*inode = ino;
+					found = true;
+					break;
+				}
+			}
+
+			line = next;
+		}
+	}
+
+	kfree(buf);
+	filp_close(file, NULL);
+	return found;
 }
 
-/* ================================================================
- * INODE SCAN
- * ================================================================ */
-pid_t resolve_pid_from_inode(unsigned long ino)
+/**
+ * resolver_find_pid_by_inode() - Find a task with an fd pointing at an inode.
+ * @inode: Socket inode to match.
+ * @return: Owning PID when found, otherwise zero.
+ * @note: This inspects task file tables under RCU and does not dereference
+ * sk_socket->file.
+ */
+static pid_t resolver_find_pid_by_inode(unsigned long inode)
 {
-    struct task_struct *task;
-    pid_t found = 0;
+	struct task_struct *task;
+	pid_t pid = 0;
 
-    if (!ino)
-        return 0;
+	rcu_read_lock();
+	for_each_process(task) {
+		struct files_struct *files;
+		struct fdtable *fdt;
+		unsigned int fd;
 
-    found = inode_cache_lookup(ino);
-    if (found)
-        return found;
+		files = task->files;
+		if (!files)
+			continue;
+		spin_lock(&files->file_lock);
+		fdt = files_fdtable(files);
+		for (fd = 0; fd < fdt->max_fds; fd++) {
+			struct file *file = rcu_dereference_raw(fdt->fd[fd]);
+			struct inode *ino;
 
-    rcu_read_lock();
+			if (!file)
+				continue;
+			ino = file_inode(file);
+			if (ino && ino->i_ino == inode) {
+				pid = task_pid_nr(task);
+				break;
+			}
+		}
+		spin_unlock(&files->file_lock);
+		if (pid)
+			break;
+	}
+	rcu_read_unlock();
 
-    for_each_process(task)
-    {
-        struct files_struct *files = task->files;
-        struct fdtable *fdt;
-        int i;
-
-        if (!files)
-            continue;
-
-        spin_lock(&files->file_lock);
-
-        fdt = files_fdtable(files);
-        if (!fdt)
-        {
-            spin_unlock(&files->file_lock);
-            continue;
-        }
-
-        for (i = 0; i < fdt->max_fds; i++)
-        {
-            struct file *f = fdt->fd[i];
-            struct inode *fi;
-
-            if (!f)
-                continue;
-
-            fi = file_inode(f);
-            if (!fi)
-                continue;
-
-            if (fi->i_ino == ino)
-            {
-                found = task_pid_nr(task);
-                spin_unlock(&files->file_lock);
-                goto out;
-            }
-        }
-
-        spin_unlock(&files->file_lock);
-    }
-
-out:
-    rcu_read_unlock();
-
-    if (found)
-        inode_cache_insert(ino, found);
-
-    return found;
+	return pid;
 }
 
-/* ================================================================
- * FILE SCAN
- * ================================================================ */
-pid_t resolve_pid_from_file(struct file *file)
+/**
+ * resolver_worker() - Worker body for async flow resolution.
+ * @work: Embedded work item.
+ * @return: None.
+ * @note: On success both inode and flow caches are updated.
+ */
+static void resolver_worker(struct work_struct *work)
 {
-    struct task_struct *task;
-    pid_t found = 0;
+	struct resolver_work *job = container_of(work, struct resolver_work, work);
+	unsigned long inode = 0;
+	pid_t pid = 0;
 
-    if (!file)
-        return 0;
+	if (resolver_parse_tcp_table("/proc/net/tcp", &job->key, &inode, false) ||
+	    resolver_parse_tcp_table("/proc/net/tcp6", &job->key, &inode, true)) {
+		pid = resolver_find_pid_by_inode(inode);
+		if (pid > 0) {
+			inode_cache_store(inode, pid);
+			flow_cache_store(&job->key, pid);
+		}
+	}
 
-    found = cache_lookup(file);
-    if (found)
-        return found;
-
-    if (file_inode(file))
-    {
-        unsigned long ino = file_inode(file)->i_ino;
-        found = resolve_pid_from_inode(ino);
-        if (found)
-        {
-            cache_insert(file, found);
-            return found;
-        }
-    }
-
-    rcu_read_lock();
-
-    for_each_process(task)
-    {
-        struct files_struct *files = task->files;
-        struct fdtable *fdt;
-        int i;
-
-        if (!files)
-            continue;
-
-        spin_lock(&files->file_lock);
-
-        fdt = files_fdtable(files);
-        if (!fdt)
-        {
-            spin_unlock(&files->file_lock);
-            continue;
-        }
-
-        for (i = 0; i < fdt->max_fds; i++)
-        {
-            if (fdt->fd[i] == file)
-            {
-                found = task_pid_nr(task);
-                spin_unlock(&files->file_lock);
-                goto out_file;
-            }
-        }
-
-        spin_unlock(&files->file_lock);
-    }
-
-out_file:
-    rcu_read_unlock();
-
-    if (found)
-        cache_insert(file, found);
-
-    return found;
+	atomic_dec(&resolver_inflight);
+	kfree(job);
 }
 
-/* ================================================================
- * SOCKET RESOLVE WORK ITEM
- * ================================================================ */
-struct resolve_work
+/**
+ * resolver_schedule() - Queue async resolution for a flow key.
+ * @key: Canonical or non-canonical flow key.
+ * @return: None.
+ * @note: Requests are rate-limited by RESOLVER_MAX_INFLIGHT and flow backoff.
+ */
+void resolver_schedule(const struct flow_key *key)
 {
-    struct work_struct work;
-    unsigned long inflight_key;
-    unsigned long ino;
-    struct sock *sk;
-    struct file *file;
-};
+	struct resolver_work *job;
+	struct flow_key canonical;
 
-static void resolve_work_fn(struct work_struct *work)
-{
-    struct resolve_work *rw =
-        container_of(work, struct resolve_work, work);
-    pid_t pid = 0;
+	if (!key || !flow_cache_should_scan(key))
+		return;
+	if (atomic_inc_return(&resolver_inflight) > RESOLVER_MAX_INFLIGHT) {
+		atomic_dec(&resolver_inflight);
+		return;
+	}
 
-    if (rw->ino)
-        pid = resolve_pid_from_inode(rw->ino);
-    if (!pid && rw->file)
-        pid = resolve_pid_from_file(rw->file);
+	job = kzalloc(sizeof(*job), GFP_ATOMIC);
+	if (!job) {
+		atomic_dec(&resolver_inflight);
+		pr_err("kta: resolver: work allocation failed\n");
+		return;
+	}
 
-    if (pid)
-    {
-        if (rw->sk)
-            sock_cache_insert(rw->sk, pid);
-        if (rw->file)
-            cache_insert(rw->file, pid);
-        if (rw->ino)
-            inode_cache_insert(rw->ino, pid);
-    }
-
-    inflight_remove(rw->inflight_key);
-    kfree(rw);
+	canonical = *key;
+	make_canonical(&canonical);
+	job->key = canonical;
+	INIT_WORK(&job->work, resolver_worker);
+	flow_cache_set_scanned(&canonical);
+	queue_work(system_wq, &job->work);
 }
 
-void resolver_schedule(unsigned long ino, struct sock *sk, struct file *file)
-{
-    struct resolve_work *rw;
-    unsigned long key_value = ino;
-    unsigned long key;
-
-    if (!resolver_wq)
-        return;
-
-    if (!key_value && file && file_inode(file))
-        key_value = file_inode(file)->i_ino;
-    if (!key_value)
-        key_value = (unsigned long)sk;
-    if (!key_value)
-        return;
-
-    key = inflight_key(RESOLVE_WORK_SOCKET, key_value);
-    if (!inflight_try_add(key))
-        return;
-
-    rw = kmalloc(sizeof(*rw), GFP_ATOMIC);
-    if (!rw)
-    {
-        inflight_remove(key);
-        return;
-    }
-
-    INIT_WORK(&rw->work, resolve_work_fn);
-    rw->inflight_key = key;
-    rw->ino = ino;
-    rw->sk = sk;
-    rw->file = file;
-
-    if (!queue_work(resolver_wq, &rw->work))
-    {
-        inflight_remove(key);
-        kfree(rw);
-    }
-}
-
-/* ================================================================
- * EXE RESOLVE WORK ITEM
- *
- * Reads the full executable path for a PID from process context
- * (d_path can sleep) and inserts into exe_cache.
- * ================================================================ */
-struct exe_work
-{
-    struct work_struct work;
-    unsigned long inflight_key;
-    pid_t pid;
-};
-
-static void exe_work_fn(struct work_struct *work)
-{
-    struct exe_work *ew = container_of(work, struct exe_work, work);
-    char path[EXE_PATH_MAX];
-
-    if (get_exe_path(ew->pid, path, sizeof(path)))
-        exe_cache_insert(ew->pid, path);
-
-    inflight_remove(ew->inflight_key);
-    kfree(ew);
-}
-
-void resolver_schedule_exe(pid_t pid)
-{
-    struct exe_work *ew;
-    unsigned long key;
-
-    if (!resolver_wq || !pid)
-        return;
-
-    /* Don't queue if already cached */
-    if (exe_cache_lookup(pid, NULL, 0))
-        return;
-
-    key = inflight_key(RESOLVE_WORK_EXE, (unsigned long)pid);
-    if (!inflight_try_add(key))
-        return;
-
-    ew = kmalloc(sizeof(*ew), GFP_ATOMIC);
-    if (!ew)
-    {
-        inflight_remove(key);
-        return;
-    }
-
-    INIT_WORK(&ew->work, exe_work_fn);
-    ew->inflight_key = key;
-    ew->pid = pid;
-
-    if (!queue_work(resolver_wq, &ew->work))
-    {
-        inflight_remove(key);
-        kfree(ew);
-    }
-}
-
-/* ================================================================
- * INIT / CLEANUP
- * ================================================================ */
-void resolver_init(void)
-{
-    unsigned int i;
-
-    for (i = 0; i < RESOLVER_INFLIGHT_BUCKETS; i++)
-        INIT_HLIST_HEAD(&inflight[i]);
-    inflight_count = 0;
-    atomic_set(&resolver_queue_depth, 0);
-    atomic_set(&dropped_resolutions, 0);
-
-    resolver_wq = alloc_workqueue("ta_resolver",
-                                  WQ_UNBOUND | WQ_MEM_RECLAIM,
-                                  MAX_RESOLVER_WORKERS);
-    if (!resolver_wq)
-        printk(KERN_ERR "[TA] Failed to create resolver workqueue\n");
-}
-
-void resolver_cleanup(void)
-{
-    if (resolver_wq)
-    {
-        flush_workqueue(resolver_wq);
-        destroy_workqueue(resolver_wq);
-        resolver_wq = NULL;
-    }
-}

@@ -1,439 +1,328 @@
-#include <linux/kernel.h>
+/**
+ * @file route_store.c
+ * @brief Traceroute pending and completed route store.
+ * @details The kernel module only requests route enrichment and stores daemon
+ * results. Pending target IPs are deduplicated in one list, completed hop rows
+ * are stored in another, and writes accept a strict pipe-delimited daemon
+ * format with bounded string fields.
+ * @author Kernel Traffic Analyzer Project
+ * @license GPL-2.0
+ */
+
+#include <linux/inet.h>
+#include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
-#include <linux/hashtable.h>
-#include <linux/jhash.h>
 #include <linux/string.h>
-#include <linux/timekeeping.h>
-#include <linux/inet.h>
-#include <linux/mutex.h>
-#include "../include/route_store.h"
+#include "../include/kta_api.h"
 
-static DEFINE_HASHTABLE(route_table, ROUTE_STORE_BITS);
-static DEFINE_SPINLOCK(route_lock);
-static DEFINE_MUTEX(route_write_mutex);
+static LIST_HEAD(pending_list);
+static LIST_HEAD(route_list);
+static DEFINE_SPINLOCK(route_store_lock);
+static u32 route_done_entries;
+static u32 route_pending_entries;
 
-void route_store_init(void)
+/**
+ * route_store_init() - Initialize route store lists.
+ * @return: Zero on success.
+ * @note: Lists are statically allocated.
+ */
+int route_store_init(void)
 {
-    hash_init(route_table);
+	INIT_LIST_HEAD(&pending_list);
+	INIT_LIST_HEAD(&route_list);
+	route_done_entries = 0;
+	route_pending_entries = 0;
+	return 0;
 }
 
-static struct route_entry *__find_entry(__be32 ip)
+/**
+ * route_store_free_list() - Free all entries in a route list.
+ * @head: List head to drain.
+ * @count: Counter to reset after draining.
+ * @return: None.
+ * @note: Caller must hold route_store_lock.
+ */
+static void route_store_free_list(struct list_head *head, u32 *count)
 {
-    struct route_entry *e;
-    u32 h = jhash(&ip, sizeof(ip), 0);
+	struct route_entry *entry;
+	struct route_entry *tmp;
 
-    hash_for_each_possible(route_table, e, node, h)
-    {
-        if (e->dest_ip == ip)
-            return e;
-    }
-    return NULL;
+	list_for_each_entry_safe(entry, tmp, head, list) {
+		list_del(&entry->list);
+		kfree(entry);
+	}
+	*count = 0;
 }
 
-static inline bool is_routable(__be32 ip)
+/**
+ * route_store_exit() - Free all pending and completed route entries.
+ * @return: None.
+ * @note: Called after /proc files are removed.
+ */
+void route_store_exit(void)
 {
-    u32 h = ntohl(ip);
-    if ((h >> 24) == 127)
-        return false; /* loopback   */
-    if ((h >> 24) == 10)
-        return false; /* 10/8       */
-    if ((h >> 20) == (172 << 4 | 1))
-        return false; /* 172.16/12 */
-    if ((h >> 16) == (192 << 8 | 168))
-        return false; /* 192.168/16 */
-    if ((h >> 16) == (169 << 8 | 254))
-        return false; /* link-local */
-    if ((h >> 28) == 14)
-        return false; /* multicast  */
-    if (h == 0)
-        return false; /* 0.0.0.0    */
-    return true;
+	spin_lock_bh(&route_store_lock);
+	route_store_free_list(&pending_list, &route_pending_entries);
+	route_store_free_list(&route_list, &route_done_entries);
+	spin_unlock_bh(&route_store_lock);
 }
 
-void route_store_request(__be32 ip, const char *domain)
+/**
+ * route_find_locked() - Find an IP in a route list.
+ * @head: List head to scan.
+ * @ip: Target IP in network byte order.
+ * @return: Matching entry or NULL.
+ * @note: Caller must hold route_store_lock.
+ */
+static struct route_entry *route_find_locked(struct list_head *head, __be32 ip)
 {
-    struct route_entry *e, *existing;
-    u64 now = ktime_get_real_seconds();
-    u32 h = jhash(&ip, sizeof(ip), 0);
+	struct route_entry *entry;
 
-    if (!is_routable(ip))
-        return;
+	list_for_each_entry(entry, head, list) {
+		if (entry->target_ip == ip)
+			return entry;
+	}
 
-    spin_lock(&route_lock);
-    e = __find_entry(ip);
-    if (e)
-    {
-        if (e->status == ROUTE_STATUS_DONE &&
-            now - e->last_updated < ROUTE_TTL)
-        {
-            spin_unlock(&route_lock);
-            return;
-        }
-        if (e->status == ROUTE_STATUS_PENDING ||
-            e->status == ROUTE_STATUS_RUNNING)
-        {
-            spin_unlock(&route_lock);
-            return;
-        }
-        e->hop_count = 0;
-        e->status = ROUTE_STATUS_PENDING;
-        e->requested_at = now;
-        if (domain && domain[0] && !e->domain[0])
-            strscpy(e->domain, domain, sizeof(e->domain));
-        spin_unlock(&route_lock);
-        return;
-    }
-    spin_unlock(&route_lock);
-
-    e = kmalloc(sizeof(*e), GFP_ATOMIC);
-    if (!e)
-        return;
-
-    memset(e, 0, sizeof(*e));
-    e->dest_ip = ip;
-    e->status = ROUTE_STATUS_PENDING;
-    e->requested_at = now;
-    if (domain && domain[0])
-        strscpy(e->domain, domain, sizeof(e->domain));
-
-    spin_lock(&route_lock);
-    existing = __find_entry(ip);
-    if (existing)
-    {
-        if (existing->status != ROUTE_STATUS_PENDING &&
-            existing->status != ROUTE_STATUS_RUNNING)
-        {
-            existing->hop_count = 0;
-            existing->status = ROUTE_STATUS_PENDING;
-            existing->requested_at = now;
-            if (domain && domain[0] && !existing->domain[0])
-                strscpy(existing->domain, domain, sizeof(existing->domain));
-        }
-        spin_unlock(&route_lock);
-        kfree(e);
-        return;
-    }
-    hash_add(route_table, &e->node, h);
-    spin_unlock(&route_lock);
+	return NULL;
 }
 
-bool route_store_lookup(__be32 ip, struct route_entry *out)
+/**
+ * route_store_request() - Add a pending route request for an IP.
+ * @ip: Target IP in network byte order.
+ * @return: None.
+ * @note: Duplicate pending or completed targets are ignored.
+ */
+void route_store_request(__be32 ip)
 {
-    struct route_entry *e;
-    bool found = false;
+	struct route_entry *entry;
 
-    spin_lock(&route_lock);
-    e = __find_entry(ip);
-    if (e)
-    {
-        *out = *e;
-        found = true;
-    }
-    spin_unlock(&route_lock);
-    return found;
+	if (!ip)
+		return;
+
+	spin_lock_bh(&route_store_lock);
+	if (route_find_locked(&pending_list, ip) ||
+	    route_find_locked(&route_list, ip)) {
+		spin_unlock_bh(&route_store_lock);
+		return;
+	}
+	entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
+	if (!entry) {
+		spin_unlock_bh(&route_store_lock);
+		pr_err("kta: route_store: allocation failed\n");
+		return;
+	}
+	entry->target_ip = ip;
+	entry->pending = true;
+	list_add_tail(&entry->list, &pending_list);
+	route_pending_entries++;
+	spin_unlock_bh(&route_store_lock);
 }
 
-static const char *next_field(const char *p, char *out, size_t outsz)
+/**
+ * route_store_is_pending() - Check whether an IP awaits daemon processing.
+ * @ip: Target IP in network byte order.
+ * @return: True when @ip is pending.
+ * @note: Used by /proc stats and route deduplication.
+ */
+bool route_store_is_pending(__be32 ip)
 {
-    size_t i = 0;
+	bool pending;
 
-    while (*p == ' ' || *p == '\t')
-        p++;
-    if (!*p || *p == '\n')
-        return NULL;
+	spin_lock_bh(&route_store_lock);
+	pending = route_find_locked(&pending_list, ip) != NULL;
+	spin_unlock_bh(&route_store_lock);
 
-    while (*p && *p != ' ' && *p != '\t' && *p != '\n' && i < outsz - 1)
-        out[i++] = *p++;
-
-    out[i] = '\0';
-    return p;
+	return pending;
 }
 
-int route_store_write(const char *buf, size_t len)
+/**
+ * route_store_is_done() - Check whether an IP has completed route data.
+ * @ip: Target IP in network byte order.
+ * @return: True when at least one completed hop exists.
+ * @note: Multiple hop rows may share the same target IP.
+ */
+bool route_store_is_done(__be32 ip)
 {
-    const char *p = buf;
-    const char *end = buf + len;
-    u64 now = ktime_get_real_seconds();
-    __be32 cur_ip = 0;
-    char line[513];
-    char fld[128];
+	bool done;
 
-    mutex_lock(&route_write_mutex);
+	spin_lock_bh(&route_store_lock);
+	done = route_find_locked(&route_list, ip) != NULL;
+	spin_unlock_bh(&route_store_lock);
 
-    while (p < end)
-    {
-
-        /* ---- slice one line ---- */
-        const char *eol = p;
-        while (eol < end && *eol != '\n')
-            eol++;
-
-        size_t llen = eol - p;
-        if (llen == 0)
-        {
-            p = eol + 1;
-            continue;
-        }
-        if (llen > 512)
-            llen = 512;
-
-        memcpy(line, p, llen);
-        line[llen] = '\0';
-        p = eol + 1;
-
-        /* Strip trailing whitespace / CR */
-        while (llen > 0 &&
-               (line[llen - 1] == ' ' ||
-                line[llen - 1] == '\t' ||
-                line[llen - 1] == '\r'))
-            line[--llen] = '\0';
-
-        if (llen == 0)
-            continue;
-
-        /* ---- DEST <ip> ---- */
-        if (strncmp(line, "DEST ", 5) == 0)
-        {
-            __be32 ip;
-            const char *ep;
-
-            if (in4_pton(line + 5, -1, (u8 *)&ip, -1, &ep) != 1)
-                continue;
-
-            spin_lock(&route_lock);
-            if (!__find_entry(ip))
-            {
-                spin_unlock(&route_lock);
-                route_store_request(ip, "");
-                spin_lock(&route_lock);
-            }
-            {
-                struct route_entry *e = __find_entry(ip);
-                if (e)
-                    e->hop_count = 0;
-            }
-            spin_unlock(&route_lock);
-
-            cur_ip = ip;
-            continue;
-        }
-
-        /* ---- STATUS DONE|FAILED|RUNNING ---- */
-        if (strncmp(line, "STATUS ", 7) == 0 && cur_ip)
-        {
-            const char *sv = line + 7;
-            u8 status;
-
-            if (strncmp(sv, "DONE", 4) == 0 ||
-                strncmp(sv, "OK", 2) == 0)
-                status = ROUTE_STATUS_DONE;
-            else if (strncmp(sv, "FAILED", 6) == 0)
-                status = ROUTE_STATUS_FAILED;
-            else if (strncmp(sv, "FAIL", 4) == 0 ||
-                     strncmp(sv, "TIMEOUT", 7) == 0)
-                status = ROUTE_STATUS_FAILED;
-            else if (strncmp(sv, "RUNNING", 7) == 0)
-                status = ROUTE_STATUS_RUNNING;
-            else
-                continue;
-
-            spin_lock(&route_lock);
-            {
-                struct route_entry *e = __find_entry(cur_ip);
-                if (e)
-                {
-                    e->status = status;
-                    e->last_updated = now;
-
-                }
-            }
-            spin_unlock(&route_lock);
-            continue;
-        }
-
-        /* ---- HOP <n> <ip> <rtt_us> <host> <city> <country> <cc>
-                    <lat_e6> <lon_e6> <asn> <org> ---- */
-        if (strncmp(line, "HOP ", 4) == 0 && cur_ip)
-        {
-            const char *fp = line + 4;
-            struct route_hop hop;
-            memset(&hop, 0, sizeof(hop));
-
-            /* hop number */
-            fp = next_field(fp, fld, sizeof(fld));
-            if (!fp)
-                continue;
-            if (kstrtou8(fld, 10, &hop.hop_num) != 0)
-                continue;
-
-            /* hop IP */
-            fp = next_field(fp, fld, sizeof(fld));
-            if (!fp)
-                continue;
-            if (strcmp(fld, "*") != 0)
-            {
-                const char *ep;
-                if (in4_pton(fld, -1, (u8 *)&hop.ip, -1, &ep) != 1)
-                    hop.ip = 0;
-            }
-
-            /* rtt_us */
-            fp = next_field(fp, fld, sizeof(fld));
-            if (!fp)
-                continue;
-            {
-                u32 rtt;
-                if (kstrtou32(fld, 10, &rtt) == 0)
-                    hop.rtt_us = rtt;
-            }
-
-            /* host */
-            fp = next_field(fp, fld, sizeof(fld));
-            if (fp)
-                strscpy(hop.host, fld, HOP_HOST_MAX);
-
-            /* city */
-            fp = next_field(fp, fld, sizeof(fld));
-            if (fp)
-                strscpy(hop.city, fld, sizeof(hop.city));
-
-            /* country */
-            fp = next_field(fp, fld, sizeof(fld));
-            if (fp)
-                strscpy(hop.country, fld, sizeof(hop.country));
-
-            /* country_code */
-            fp = next_field(fp, fld, sizeof(fld));
-            if (fp)
-                strscpy(hop.country_code, fld, sizeof(hop.country_code));
-
-            /* lat_e6 */
-            fp = next_field(fp, fld, sizeof(fld));
-            if (fp)
-            {
-                s32 v;
-                if (kstrtos32(fld, 10, &v) == 0)
-                    hop.lat_e6 = v;
-            }
-
-            /* lon_e6 */
-            fp = next_field(fp, fld, sizeof(fld));
-            if (fp)
-            {
-                s32 v;
-                if (kstrtos32(fld, 10, &v) == 0)
-                    hop.lon_e6 = v;
-            }
-
-            /* asn */
-            fp = next_field(fp, fld, sizeof(fld));
-            if (fp)
-                strscpy(hop.asn, fld, sizeof(hop.asn));
-
-            /* org */
-            fp = next_field(fp, fld, sizeof(fld));
-            if (fp)
-                strscpy(hop.org, fld, sizeof(hop.org));
-
-            spin_lock(&route_lock);
-            {
-                struct route_entry *e = __find_entry(cur_ip);
-                if (e && e->hop_count < MAX_HOPS)
-                {
-                    e->hops[e->hop_count++] = hop;
-                    e->last_updated = now;
-                }
-            }
-            spin_unlock(&route_lock);
-            continue;
-        }
-    }
-
-    mutex_unlock(&route_write_mutex);
-    return 0;
+	return done;
 }
 
-void route_store_seq_show(struct seq_file *m)
+/**
+ * route_parse_ip() - Parse a dotted IPv4 field.
+ * @field: NUL-terminated field string.
+ * @ip: Destination network-order IPv4 address.
+ * @return: Zero on success, negative errno on failure.
+ * @note: Uses in4_pton for strict bounded parsing.
+ */
+static int route_parse_ip(const char *field, __be32 *ip)
 {
-    struct route_entry *e;
-    int bkt, i;
-    u64 now = ktime_get_real_seconds();
-
-    spin_lock(&route_lock);
-
-    hash_for_each(route_table, bkt, e, node)
-    {
-        bool stale = (e->status == ROUTE_STATUS_DONE &&
-                      now - e->last_updated > ROUTE_TTL);
-
-        if (e->hop_count == 0)
-        {
-            seq_printf(m,
-                       "%pI4|%s|%s|0|-|-|-|-|-|-|-|-|-|-\n",
-                       &e->dest_ip,
-                       e->domain[0] ? e->domain : "-",
-                       stale ? "STALE" : route_status_str(e->status));
-            continue;
-        }
-
-        for (i = 0; i < e->hop_count; i++)
-        {
-            struct route_hop *h = &e->hops[i];
-            seq_printf(m,
-                       "%pI4|%s|%s|%u|%u|%pI4|%s|%u|%s|%s|%s|%d|%d|%s|%s\n",
-                       &e->dest_ip,
-                       e->domain[0] ? e->domain : "-",
-                       stale ? "STALE" : route_status_str(e->status),
-                       (unsigned)e->hop_count,
-                       (unsigned)h->hop_num,
-                       &h->ip,
-                       h->host[0] ? h->host : "-",
-                       h->rtt_us / 1000,
-                       h->city[0] ? h->city : "-",
-                       h->country[0] ? h->country : "-",
-                       h->country_code[0] ? h->country_code : "-",
-                       h->lat_e6, h->lon_e6,
-                       h->asn[0] ? h->asn : "-",
-                       h->org[0] ? h->org : "-");
-        }
-    }
-
-    spin_unlock(&route_lock);
+	if (!field || !ip ||
+	    !in4_pton(field, -1, (u8 *)ip, -1, NULL))
+		return -EINVAL;
+	return 0;
 }
 
-void route_store_pending_seq_show(struct seq_file *m)
+/**
+ * route_split_fields() - Split a route result line into fields.
+ * @buf: Mutable line buffer.
+ * @fields: Destination field pointer array.
+ * @return: Zero when all required fields are present.
+ * @note: Exactly ROUTE_RESULT_FIELDS fields are required.
+ */
+static int route_split_fields(char *buf, char *fields[ROUTE_RESULT_FIELDS])
 {
-    struct route_entry *e;
-    int bkt;
+	unsigned int idx;
+	char *cursor = buf;
 
-    spin_lock(&route_lock);
+	for (idx = 0; idx < ROUTE_RESULT_FIELDS; idx++) {
+		fields[idx] = strsep(&cursor, "|");
+		if (!fields[idx] || !fields[idx][0])
+			return -EINVAL;
+	}
+	if (cursor && cursor[0])
+		return -EINVAL;
 
-    hash_for_each(route_table, bkt, e, node)
-    {
-        if (e->status != ROUTE_STATUS_PENDING)
-            continue;
-        e->status = ROUTE_STATUS_RUNNING;
-        seq_printf(m, "%pI4 %s\n",
-                   &e->dest_ip,
-                   e->domain[0] ? e->domain : "-");
-    }
-
-    spin_unlock(&route_lock);
+	return 0;
 }
 
-void route_store_cleanup(void)
+/**
+ * route_store_write_result() - Store one daemon-produced route hop row.
+ * @line: Pipe-delimited daemon line.
+ * @len: Number of bytes supplied by the daemon.
+ * @return: Bytes consumed on success or negative errno.
+ * @note: Expected format is IP|HOP_NUM|HOP_IP|RTT_MS|COUNTRY|LAT|LON|ASN|ORG.
+ */
+int route_store_write_result(const char *line, size_t len)
 {
-    struct route_entry *e;
-    struct hlist_node *tmp;
-    int bkt;
+	char *buf;
+	char *fields[ROUTE_RESULT_FIELDS];
+	struct route_entry *pending;
+	struct route_entry *entry;
+	__be32 target_ip;
+	__be32 hop_ip;
+	unsigned int hop_num;
+	unsigned int rtt_ms;
+	int ret;
 
-    spin_lock(&route_lock);
-    hash_for_each_safe(route_table, bkt, tmp, e, node)
-    {
-        hash_del(&e->node);
-        kfree(e);
-    }
-    spin_unlock(&route_lock);
+	if (!line || !len || len >= ROUTE_RESULT_MAX_LEN)
+		return -EINVAL;
 
+	buf = kzalloc(len + 1, GFP_KERNEL);
+	if (!buf) {
+		pr_err("kta: route_store: write buffer allocation failed\n");
+		return -ENOMEM;
+	}
+	memcpy(buf, line, len);
+	strim(buf);
+
+	ret = route_split_fields(buf, fields);
+	if (ret)
+		goto out;
+	ret = route_parse_ip(fields[0], &target_ip);
+	if (ret)
+		goto out;
+	ret = route_parse_ip(fields[2], &hop_ip);
+	if (ret)
+		goto out;
+	ret = kstrtouint(fields[1], 10, &hop_num);
+	if (ret || hop_num > U8_MAX) {
+		ret = -EINVAL;
+		goto out;
+	}
+	ret = kstrtouint(fields[3], 10, &rtt_ms);
+	if (ret)
+		goto out;
+
+	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+	if (!entry) {
+		pr_err("kta: route_store: result allocation failed\n");
+		ret = -ENOMEM;
+		goto out;
+	}
+	entry->target_ip = target_ip;
+	entry->pending = false;
+	entry->hop_num = (u8)hop_num;
+	entry->hop_ip = hop_ip;
+	entry->rtt_ms = rtt_ms;
+	strlcpy(entry->country, fields[4], sizeof(entry->country));
+	strlcpy(entry->lat, fields[5], sizeof(entry->lat));
+	strlcpy(entry->lon, fields[6], sizeof(entry->lon));
+	strlcpy(entry->asn, fields[7], sizeof(entry->asn));
+	strlcpy(entry->org, fields[8], sizeof(entry->org));
+
+	spin_lock_bh(&route_store_lock);
+	pending = route_find_locked(&pending_list, target_ip);
+	if (pending) {
+		list_del(&pending->list);
+		kfree(pending);
+		if (route_pending_entries)
+			route_pending_entries--;
+	}
+	list_add_tail(&entry->list, &route_list);
+	route_done_entries++;
+	spin_unlock_bh(&route_store_lock);
+	ret = (int)len;
+
+out:
+	kfree(buf);
+	return ret;
 }
+
+/**
+ * route_store_seq_show_routes() - Emit completed route rows.
+ * @m: seq_file receiving output.
+ * @return: None.
+ * @note: Caller is the /proc route reader.
+ */
+void route_store_seq_show_routes(struct seq_file *m)
+{
+	struct route_entry *entry;
+
+	spin_lock_bh(&route_store_lock);
+	list_for_each_entry(entry, &route_list, list) {
+		seq_printf(m, "%pI4|%u|%pI4|%u|%s|%s|%s|%s|%s\n",
+			   &entry->target_ip, entry->hop_num, &entry->hop_ip,
+			   entry->rtt_ms, entry->country, entry->lat,
+			   entry->lon, entry->asn, entry->org);
+	}
+	spin_unlock_bh(&route_store_lock);
+}
+
+/**
+ * route_store_seq_show_pending() - Emit pending route target IPs.
+ * @m: seq_file receiving output.
+ * @return: None.
+ * @note: One target IP is emitted per line.
+ */
+void route_store_seq_show_pending(struct seq_file *m)
+{
+	struct route_entry *entry;
+
+	spin_lock_bh(&route_store_lock);
+	list_for_each_entry(entry, &pending_list, list)
+		seq_printf(m, "%pI4\n", &entry->target_ip);
+	spin_unlock_bh(&route_store_lock);
+}
+
+/**
+ * route_store_done_count() - Return completed route row count.
+ * @return: Number of completed hop rows.
+ * @note: Sampled under route_store_lock.
+ */
+u32 route_store_done_count(void)
+{
+	u32 count;
+
+	spin_lock_bh(&route_store_lock);
+	count = route_done_entries;
+	spin_unlock_bh(&route_store_lock);
+
+	return count;
+}
+
