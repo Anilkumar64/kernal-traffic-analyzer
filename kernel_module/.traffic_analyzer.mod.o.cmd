@@ -5,7 +5,7 @@ source_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/
 deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/traffic_analyzer.mod.o := \
     $(wildcard include/config/UNWINDER_ORC) \
     $(wildcard include/config/MODULE_UNLOAD) \
-    $(wildcard include/config/RETPOLINE) \
+    $(wildcard include/config/MITIGATION_RETPOLINE) \
   include/linux/compiler-version.h \
     $(wildcard include/config/CC_VERSION_TEXT) \
   include/linux/kconfig.h \
@@ -103,7 +103,7 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/tr
   arch/x86/include/asm/barrier.h \
   arch/x86/include/asm/alternative.h \
     $(wildcard include/config/CALL_THUNKS) \
-    $(wildcard include/config/RETHUNK) \
+    $(wildcard include/config/MITIGATION_RETHUNK) \
   include/linux/stringify.h \
   arch/x86/include/asm/asm.h \
   arch/x86/include/asm/extable_fixup_types.h \
