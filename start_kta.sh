@@ -18,6 +18,7 @@ MODULE_NAME="traffic_analyzer"
 MODULE_KO="$KERNEL_DIR/$MODULE_NAME.ko"
 ROUTE_DAEMON="${KTA_ROUTE_DAEMON:-$ROOT_DIR/daemon/ta_route_daemon.py}"
 LOG_DIR="${KTA_LOG_DIR:-/tmp/kta}"
+BUILD_LOG="$LOG_DIR/build.log"
 BACKEND_OUTPUT="${KTA_BACKEND_OUTPUT:-/tmp/kta_flows.json}"
 
 DO_BUILD=1
@@ -26,6 +27,7 @@ START_ROUTE_DAEMON=1
 START_BACKEND="${KTA_START_BACKEND:-0}"
 BACKEND_IFACE="${KTA_BACKEND_IFACE:-}"
 KEEP_MODULE=0
+VERBOSE="${KTA_VERBOSE:-0}"
 GUI_ARGS=()
 
 ROUTE_DAEMON_PID=""
@@ -44,11 +46,12 @@ Options:
   --iface IFACE       Interface for --with-backend. Defaults to default route.
   --backend-output P  JSON output path for backend. Default: /tmp/kta_flows.json.
   --keep-module       Leave traffic_analyzer loaded when the GUI exits.
+  --verbose           Print full build output instead of writing it to the log.
   -h, --help          Show this help.
 
 Environment overrides:
   KTA_BUILD_DIR, KTA_LOG_DIR, KTA_ROUTE_DAEMON, KTA_START_BACKEND,
-  KTA_BACKEND_IFACE, KTA_BACKEND_OUTPUT
+  KTA_BACKEND_IFACE, KTA_BACKEND_OUTPUT, KTA_VERBOSE
 EOF
 }
 
@@ -90,6 +93,29 @@ check_qt_version() {
 
 module_loaded() {
     lsmod | awk '{print $1}' | grep -qx "$MODULE_NAME"
+}
+
+run_logged() {
+    local label="$1"
+    shift
+
+    log "$label"
+    if [[ "$VERBOSE" == "1" ]]; then
+        "$@"
+        return
+    fi
+
+    {
+        printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$label"
+        printf '$'
+        printf ' %q' "$@"
+        printf '\n'
+    } >>"$BUILD_LOG"
+
+    if ! "$@" >>"$BUILD_LOG" 2>&1; then
+        tail -n 80 "$BUILD_LOG" >&2 || true
+        die "$label failed; full log: $BUILD_LOG"
+    fi
 }
 
 cleanup() {
@@ -147,6 +173,10 @@ parse_args() {
                 ;;
             --keep-module)
                 KEEP_MODULE=1
+                shift
+                ;;
+            --verbose)
+                VERBOSE=1
                 shift
                 ;;
             -h|--help)
@@ -216,18 +246,17 @@ build_project() {
         return
     fi
 
-    log "Building kernel module"
+    : >"$BUILD_LOG"
     if [[ "$CLEAN_KERNEL" -eq 1 ]]; then
-        make -C "$KERNEL_DIR" clean
+        run_logged "Cleaning kernel module" make -C "$KERNEL_DIR" clean
     fi
-    make -C "$KERNEL_DIR" -j"$(nproc)"
+    run_logged "Building kernel module" make -C "$KERNEL_DIR" -j"$(nproc)"
     [[ -f "$MODULE_KO" ]] || die "kernel module did not produce $MODULE_KO"
 
-    log "Configuring CMake project"
-    cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
+    run_logged "Configuring CMake project" cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
 
-    log "Building backend and GUI"
-    cmake --build "$BUILD_DIR" --parallel "$(nproc)"
+    run_logged "Building backend and GUI" cmake --build "$BUILD_DIR" --parallel "$(nproc)"
+    log "Build log: $BUILD_LOG"
 }
 
 find_executable() {
