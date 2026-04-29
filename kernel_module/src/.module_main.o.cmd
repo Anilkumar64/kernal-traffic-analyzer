@@ -21,7 +21,7 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
     $(wildcard include/config/CC_HAS_ASM_INLINE) \
   include/linux/compiler_attributes.h \
   include/linux/compiler-gcc.h \
-    $(wildcard include/config/RETPOLINE) \
+    $(wildcard include/config/MITIGATION_RETPOLINE) \
     $(wildcard include/config/GCC_ASM_GOTO_OUTPUT_WORKAROUND) \
     $(wildcard include/config/ARCH_USE_BUILTIN_BSWAP) \
     $(wildcard include/config/SHADOW_CALL_STACK) \
@@ -102,7 +102,7 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
   arch/x86/include/asm/barrier.h \
   arch/x86/include/asm/alternative.h \
     $(wildcard include/config/CALL_THUNKS) \
-    $(wildcard include/config/RETHUNK) \
+    $(wildcard include/config/MITIGATION_RETHUNK) \
   include/linux/stringify.h \
   arch/x86/include/asm/asm.h \
   arch/x86/include/asm/extable_fixup_types.h \
@@ -1237,7 +1237,6 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
   include/linux/in.h \
   include/uapi/linux/in.h \
   /home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/src/../include/cache.h \
-  include/linux/hashtable.h \
   /home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/src/../include/inode_cache.h \
   /home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/src/../include/sock_cache.h \
   include/net/sock.h \
@@ -1452,6 +1451,7 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
     $(wildcard include/config/NET_CLS_ACT) \
   include/uapi/linux/pkt_sched.h \
   include/uapi/linux/netdev.h \
+  include/linux/hashtable.h \
   include/linux/page_counter.h \
   include/linux/memcontrol.h \
   include/linux/vmpressure.h \
