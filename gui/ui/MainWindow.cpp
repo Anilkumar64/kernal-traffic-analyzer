@@ -102,11 +102,13 @@ void MainWindow::updateStatusBar()
 void MainWindow::exportJson()
 {
     const auto path = QFileDialog::getSaveFileName(this, "Export JSON", {}, "JSON (*.json)");
-    if (!path.isEmpty()) Exporter(this).exportJson(path, m_snap);
+    if (!path.isEmpty() && !Exporter(this).exportJson(path, m_snap))
+        QMessageBox::warning(this, "Export Failed", "Could not write the JSON export.");
 }
 
 void MainWindow::exportCsv()
 {
     const auto path = QFileDialog::getSaveFileName(this, "Export CSV", {}, "CSV (*.csv)");
-    if (!path.isEmpty()) Exporter(this).exportCsv(path, m_snap.connections);
+    if (!path.isEmpty() && !Exporter(this).exportCsv(path, m_snap.connections))
+        QMessageBox::warning(this, "Export Failed", "Could not write the CSV export.");
 }
