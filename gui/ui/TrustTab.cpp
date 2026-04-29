@@ -19,11 +19,11 @@ TrustTab::TrustTab(QWidget *parent) : QWidget(parent)
     auto *tl = new QHBoxLayout(topBar);
     tl->setContentsMargins(24, 0, 24, 0);
     auto *ttl = new QLabel("Process Trust Score", topBar);
-    ttl->setStyleSheet("color:#cccccc;font-size:17px;font-weight:600;"
-                       "font-family:'Ubuntu Mono';");
+    ttl->setStyleSheet("color:#ffffff;font-size:17px;font-weight:600;"
+                       "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_summary = new QLabel("", topBar);
     m_summary->setStyleSheet("color:#8a8a8a;font-size:14px;"
-                             "font-family:'Ubuntu Mono';");
+                             "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     tl->addWidget(ttl);
     tl->addSpacing(12);
     tl->addWidget(m_summary);
@@ -42,8 +42,8 @@ TrustTab::TrustTab(QWidget *parent) : QWidget(parent)
         this);
     info->setFixedHeight(30);
     info->setStyleSheet("background:#252526;color:#8a8a8a;font-size:11px;"
-                        "font-family:'Ubuntu Mono';"
-                        "border-bottom:1px solid #555555;");
+                        "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;"
+                        "border-bottom:1px solid #333333;");
     outer->addWidget(info);
 
     m_table = new QTableWidget(0, 6, this);
@@ -101,7 +101,7 @@ void TrustTab::updateData(const QVector<ProcEntry> &procs,
         gradeItem->setForeground(QBrush(gradeColor));
         gradeItem->setTextAlignment(Qt::AlignCenter | Qt::AlignVCenter);
         gradeItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-        QFont gf("Ubuntu Mono");
+        QFont gf("Segoe UI");
         gf.setPixelSize(16);
         gf.setWeight(QFont::Bold);
         gradeItem->setFont(gf);
@@ -123,7 +123,7 @@ void TrustTab::updateData(const QVector<ProcEntry> &procs,
                 .arg(ts.color.name()));
         auto *numL = new QLabel(QString::number(ts.score), scoreW);
         numL->setStyleSheet(
-            QString("color:%1;font-size:13px;font-family:'Ubuntu Mono';"
+            QString("color:%1;font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;"
                     "background:transparent;")
                 .arg(ts.color.name()));
         numL->setFixedWidth(28);
