@@ -54,7 +54,7 @@ void BwGraph::paintEvent(QPaintEvent *)
     p.fillRect(r, QColor("#252526"));
 
     // Title
-    QFont tf("Ubuntu Mono"); tf.setPixelSize(11); tf.setWeight(QFont::Bold);
+    QFont tf("Segoe UI"); tf.setPixelSize(12); tf.setWeight(QFont::Bold);
     p.setFont(tf);
     p.setPen(QColor("#8a8a8a"));
     p.drawText(QRect(r.left()+8, r.top()+4, 300, 16),
@@ -64,7 +64,7 @@ void BwGraph::paintEvent(QPaintEvent *)
     bool hasData = (m_mode == Week) ?
         !m_totals.isEmpty() : !m_samples.isEmpty();
     if (!hasData || m_process.isEmpty()) {
-        QFont nf("Ubuntu Mono"); nf.setPixelSize(13);
+        QFont nf("Segoe UI"); nf.setPixelSize(13);
         p.setFont(nf);
         p.setPen(QColor("#3e3e42"));
         p.drawText(r, Qt::AlignCenter,
@@ -110,7 +110,7 @@ void BwGraph::drawGraph(QPainter &p, const QRect &r,
         int y = r.top() + r.height() * i / 4;
         p.drawLine(r.left(), y, r.right(), y);
         p.setPen(QColor("#8a8a8a"));
-        QFont af("Ubuntu Mono"); af.setPixelSize(9);
+        QFont af("Segoe UI"); af.setPixelSize(9);
         p.setFont(af);
         p.drawText(QRect(r.left()-48, y-8, 44, 16),
                    Qt::AlignRight|Qt::AlignVCenter,
@@ -147,7 +147,7 @@ void BwGraph::drawGraph(QPainter &p, const QRect &r,
 
     // X axis labels (every N samples)
     int step = qMax(1, samples.size() / 8);
-    QFont lf("Ubuntu Mono"); lf.setPixelSize(9);
+    QFont lf("Segoe UI"); lf.setPixelSize(9);
     p.setFont(lf);
     p.setPen(QColor("#8a8a8a"));
     for (int i = 0; i < labels.size(); i += step) {
@@ -157,7 +157,7 @@ void BwGraph::drawGraph(QPainter &p, const QRect &r,
     }
 
     // Legend
-    QFont legf("Ubuntu Mono"); legf.setPixelSize(10);
+    QFont legf("Segoe UI"); legf.setPixelSize(10);
     p.setFont(legf);
     p.setPen(QColor("#6366f1"));
     p.drawText(QRect(r.right()-120, r.top()-20, 50, 14),
@@ -186,7 +186,7 @@ void BwGraph::drawBarChart(QPainter &p, const QRect &r,
         p.drawLine(r.left(), y, r.right(), y);
     }
 
-    QFont lf("Ubuntu Mono"); lf.setPixelSize(9);
+    QFont lf("Segoe UI"); lf.setPixelSize(9);
     p.setFont(lf);
 
     for (int i = 0; i < n; ++i) {
@@ -225,10 +225,10 @@ HistoryTab::HistoryTab(QWidget *parent) : QWidget(parent)
     auto *tl = new QHBoxLayout(topBar);
     tl->setContentsMargins(20,0,20,0);
     auto *ttl = new QLabel("Traffic History", topBar);
-    ttl->setStyleSheet("color:#cccccc;font-size:17px;font-weight:600;"
-                       "font-family:'Ubuntu Mono';");
+    ttl->setStyleSheet("color:#ffffff;font-size:17px;font-weight:600;"
+                       "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     auto *sub = new QLabel("Historical bandwidth per process", topBar);
-    sub->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Ubuntu Mono';");
+    sub->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     tl->addWidget(ttl); tl->addSpacing(16); tl->addWidget(sub); tl->addStretch();
     outer->addWidget(topBar);
 
@@ -257,8 +257,8 @@ HistoryTab::HistoryTab(QWidget *parent) : QWidget(parent)
     ll->addWidget(ldiv);
     m_procList = new QListWidget(left);
     m_procList->setStyleSheet(
-        "QListWidget{background:#1e1e1e;border:none;"
-        "font-family:'Ubuntu Mono';font-size:13px;}"
+        "QListWidget{background:#252526;border:none;"
+        "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;font-size:13px;}"
         "QListWidget::item{padding:8px 14px;border-bottom:1px solid #252526;}"
         "QListWidget::item:selected{background:#252545;color:#c586c0;"
         "border-left:2px solid #6366f1;}"
