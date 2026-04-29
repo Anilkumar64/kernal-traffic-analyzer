@@ -20,7 +20,6 @@ set(SOURCES
     core/BgpMonitor.cpp
     core/Exporter.cpp
     core/FirewallManager.cpp
-    core/BandwidthThrottler.cpp
     core/ThreatIntel.cpp
     core/TrustScorer.cpp
     ui/MainWindow.cpp
