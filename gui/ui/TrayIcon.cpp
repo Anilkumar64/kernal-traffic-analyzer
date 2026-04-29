@@ -9,7 +9,7 @@ TrayIcon::TrayIcon(QWidget *parent)
     m_menu = new QMenu();
     m_menu->setStyleSheet(
         "QMenu{background:#252526;border:1px solid #555555;"
-        "color:#cccccc;font-family:'Ubuntu Mono';font-size:13px;}"
+        "color:#cccccc;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;font-size:13px;}"
         "QMenu::item{padding:6px 20px;}"
         "QMenu::item:selected{background:#252545;color:#c586c0;}"
         "QMenu::separator{background:#3e3e42;height:1px;margin:4px 0;}");
