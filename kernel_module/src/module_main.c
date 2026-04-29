@@ -1,79 +1,146 @@
+/**
+ * @file module_main.c
+ * @brief Kernel Traffic Analyzer module lifecycle.
+ * @details Module initialization brings subsystems up in dependency order and
+ * tears down partial initialization in reverse order on failure. Exit performs
+ * the exact reverse sequence so hooks stop before shared state disappears.
+ * @author Kernel Traffic Analyzer Project
+ * @license GPL-2.0
+ */
+
+#include <linux/init.h>
 #include <linux/module.h>
-#include <linux/kernel.h>
-#include "../include/traffic_analyzer.h"
-#include "../include/cache.h"
-#include "../include/inode_cache.h"
-#include "../include/sock_cache.h"
-#include "../include/flow_cache.h"
-#include "../include/resolver.h"
-#include "../include/exe_resolver.h"
-#include "../include/dns_map.h"
-#include "../include/route_store.h"
+#include "../include/kta_api.h"
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Anil Reddy");
-MODULE_DESCRIPTION("Kernel Traffic Analyzer");
-MODULE_VERSION("1.0");
+MODULE_AUTHOR("Kernel Traffic Analyzer Project");
+MODULE_DESCRIPTION("Per-process network traffic analyzer via Netfilter");
+MODULE_VERSION("1.0.0");
 
-/* KTA v1.0 */
-
+/**
+ * traffic_analyzer_init() - Initialize the Kernel Traffic Analyzer module.
+ * @return: Zero on success or a negative errno from the failing subsystem.
+ * @note: Subsystems are initialized in the order required by the public API.
+ */
 static int __init traffic_analyzer_init(void)
 {
-    int ret;
+	int ret;
 
-    printk(KERN_INFO "[traffic_analyzer] Initializing module v1.0\n");
+	ret = dns_map_init();
+	if (ret)
+		goto fail;
+	pr_info("kta: dns_map initialized\n");
 
-    ret = proc_fs_init();
-    if (ret)
-        return ret;
+	ret = sock_cache_init();
+	if (ret)
+		goto fail_sock;
+	pr_info("kta: sock_cache initialized\n");
 
-    cache_init();
-    inode_cache_init();
-    sock_cache_init();
-    flow_cache_init();
-    exe_cache_init();
-    dns_map_init();
-    route_store_init();
-    resolver_init();
+	ret = inode_cache_init();
+	if (ret)
+		goto fail_inode;
+	pr_info("kta: inode_cache initialized\n");
 
-    ret = net_hook_init();
-    if (ret)
-    {
-        printk(KERN_ERR "[TA] net_hook_init failed: %d\n", ret);
-        resolver_cleanup();
-        route_store_cleanup();
-        dns_map_cleanup();
-        exe_cache_cleanup();
-        flow_cache_cleanup();
-        sock_cache_cleanup();
-        inode_cache_cleanup();
-        cache_cleanup();
-        proc_fs_cleanup();
-        return ret;
-    }
+	ret = flow_cache_init();
+	if (ret)
+		goto fail_flow;
+	pr_info("kta: flow_cache initialized\n");
 
-    printk(KERN_INFO "[traffic_analyzer] Module loaded\n");
-    return 0;
+	ret = exe_cache_init();
+	if (ret)
+		goto fail_exe;
+	pr_info("kta: exe_cache initialized\n");
+
+	ret = resolver_init();
+	if (ret)
+		goto fail_resolver;
+	pr_info("kta: resolver initialized\n");
+
+	ret = route_store_init();
+	if (ret)
+		goto fail_route;
+	pr_info("kta: route_store initialized\n");
+
+	ret = stats_init();
+	if (ret)
+		goto fail_stats;
+	pr_info("kta: stats initialized\n");
+
+	ret = proc_init();
+	if (ret)
+		goto fail_proc;
+	pr_info("kta: proc_interface initialized\n");
+
+	ret = nf_hook_init();
+	if (ret)
+		goto fail_nf;
+	pr_info("kta: netfilter_hook initialized\n");
+
+	pr_info("kta: module initialized\n");
+	return 0;
+
+fail_nf:
+	proc_exit();
+	pr_info("kta: proc_interface destroyed\n");
+fail_proc:
+	stats_exit();
+	pr_info("kta: stats destroyed\n");
+fail_stats:
+	route_store_exit();
+	pr_info("kta: route_store destroyed\n");
+fail_route:
+	resolver_exit();
+	pr_info("kta: resolver destroyed\n");
+fail_resolver:
+	exe_cache_exit();
+	pr_info("kta: exe_cache destroyed\n");
+fail_exe:
+	flow_cache_exit();
+	pr_info("kta: flow_cache destroyed\n");
+fail_flow:
+	inode_cache_exit();
+	pr_info("kta: inode_cache destroyed\n");
+fail_inode:
+	sock_cache_exit();
+	pr_info("kta: sock_cache destroyed\n");
+fail_sock:
+	dns_map_exit();
+	pr_info("kta: dns_map destroyed\n");
+fail:
+	pr_err("kta: module_main: initialization failed: %d\n", ret);
+	return ret ? ret : -EFAULT;
 }
 
+/**
+ * traffic_analyzer_exit() - Tear down the Kernel Traffic Analyzer module.
+ * @return: None.
+ * @note: Teardown order is the exact reverse of successful initialization.
+ */
 static void __exit traffic_analyzer_exit(void)
 {
-    printk(KERN_INFO "[traffic_analyzer] Cleaning up\n");
-
-    net_hook_cleanup();
-    resolver_cleanup();
-    stats_cleanup();
-    route_store_cleanup();
-    dns_map_cleanup();
-    exe_cache_cleanup();
-    flow_cache_cleanup();
-    sock_cache_cleanup();
-    inode_cache_cleanup();
-    cache_cleanup();
-    proc_fs_cleanup();
-
-    printk(KERN_INFO "[traffic_analyzer] Module unloaded\n");
+	nf_hook_exit();
+	pr_info("kta: netfilter_hook destroyed\n");
+	proc_exit();
+	pr_info("kta: proc_interface destroyed\n");
+	stats_exit();
+	pr_info("kta: stats destroyed\n");
+	route_store_exit();
+	pr_info("kta: route_store destroyed\n");
+	resolver_exit();
+	pr_info("kta: resolver destroyed\n");
+	exe_cache_exit();
+	pr_info("kta: exe_cache destroyed\n");
+	flow_cache_exit();
+	pr_info("kta: flow_cache destroyed\n");
+	inode_cache_exit();
+	pr_info("kta: inode_cache destroyed\n");
+	sock_cache_exit();
+	pr_info("kta: sock_cache destroyed\n");
+	dns_map_exit();
+	pr_info("kta: dns_map destroyed\n");
+	pr_info("kta: module destroyed\n");
 }
 
 module_init(traffic_analyzer_init);
 module_exit(traffic_analyzer_exit);
+

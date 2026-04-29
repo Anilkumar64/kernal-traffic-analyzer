@@ -10,6 +10,7 @@
 
 #include <linux/cred.h>
 #include <linux/if_ether.h>
+#include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <linux/pid.h>
 #include <linux/rcupdate.h>
@@ -103,7 +104,7 @@ pid_t resolve_pid_4tier(const struct flow_key *key, const struct sock *sk)
 		return pid;
 
 	if (sk) {
-		ino = sock_i_ino(sk);
+		ino = sock_i_ino((struct sock *)sk);
 		pid = inode_cache_lookup(ino);
 		if (pid > 0) {
 			sock_cache_store(sk, pid);
@@ -304,4 +305,3 @@ void parse_packet(struct sk_buff *skb, bool is_inbound)
 		break;
 	}
 }
-

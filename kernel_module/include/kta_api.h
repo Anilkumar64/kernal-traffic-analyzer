@@ -14,8 +14,56 @@
 #include <linux/seq_file.h>
 #include <linux/skbuff.h>
 #include <linux/socket.h>
+#include <linux/string.h>
 #include <net/sock.h>
 #include "kta_types.h"
+
+/**
+ * kta_strlcpy() - Compatibility wrapper for kernels without strlcpy().
+ * @dst: Destination buffer.
+ * @src: Source string.
+ * @size: Destination size in bytes.
+ * @return: Source string length.
+ * @note: Module code uses strlcpy by policy; modern kernels implement strscpy.
+ */
+static inline size_t kta_strlcpy(char *dst, const char *src, size_t size)
+{
+	size_t src_len;
+
+	if (!src)
+		src = "";
+	src_len = strlen(src);
+	if (!size)
+		return src_len;
+	strscpy(dst, src, size);
+	return src_len;
+}
+
+/**
+ * kta_strlcat() - Compatibility wrapper for kernels without strlcat().
+ * @dst: Destination buffer containing an existing string.
+ * @src: Source string to append.
+ * @size: Destination size in bytes.
+ * @return: Length the concatenated string tried to create.
+ * @note: Bounds are enforced before delegating the copy portion to strlcpy.
+ */
+static inline size_t kta_strlcat(char *dst, const char *src, size_t size)
+{
+	size_t dst_len;
+	size_t src_len;
+
+	if (!src)
+		src = "";
+	dst_len = strnlen(dst, size);
+	src_len = strlen(src);
+	if (dst_len == size)
+		return size + src_len;
+	kta_strlcpy(dst + dst_len, src, size - dst_len);
+	return dst_len + src_len;
+}
+
+#define strlcpy kta_strlcpy
+#define strlcat kta_strlcat
 
 /* dns_map.c */
 int dns_map_init(void);
@@ -97,4 +145,3 @@ void nf_hook_exit(void);
 void parse_packet(struct sk_buff *skb, bool is_inbound);
 pid_t resolve_pid_4tier(const struct flow_key *key, const struct sock *sk);
 void make_canonical(struct flow_key *key);
-
