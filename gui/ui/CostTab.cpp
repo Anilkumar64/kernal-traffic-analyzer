@@ -62,7 +62,7 @@ void CostBarChart::paintEvent(QPaintEvent *)
     p.fillRect(rect(), QColor("#252526"));
 
     if (m_totals.isEmpty()) {
-        QFont f("Ubuntu Mono"); f.setPixelSize(12);
+        QFont f("Segoe UI"); f.setPixelSize(12);
         p.setFont(f);
         p.setPen(QColor("#555555"));
         p.drawText(rect(), Qt::AlignCenter, "No cost data yet");
@@ -78,24 +78,24 @@ void CostBarChart::paintEvent(QPaintEvent *)
     if (peak <= 0) peak = 1;
 
     // Grid
-    p.setPen(QPen(QColor("#3e3e42"), 1, Qt::DotLine));
+    p.setPen(QPen(QColor("#333333"), 1, Qt::DotLine));
     for (int i = 1; i < 4; ++i) {
         int y = r.top() + r.height() * i / 4;
         p.drawLine(r.left(), y, r.right(), y);
-        QFont af("Ubuntu Mono"); af.setPixelSize(9);
+        QFont af("Segoe UI"); af.setPixelSize(9);
         p.setFont(af);
         p.setPen(QColor("#8a8a8a"));
         p.drawText(QRect(r.left()-48, y-8, 44, 16),
                    Qt::AlignRight|Qt::AlignVCenter,
                    QString("₹%1").arg(peak*(4-i)/4, 0,'f',1));
-        p.setPen(QPen(QColor("#3e3e42"), 1, Qt::DotLine));
+        p.setPen(QPen(QColor("#333333"), 1, Qt::DotLine));
     }
 
     int n = m_totals.size();
     double barW = double(r.width()) / n * 0.65;
     double gap  = double(r.width()) / n;
 
-    QFont lf("Ubuntu Mono"); lf.setPixelSize(9);
+    QFont lf("Segoe UI"); lf.setPixelSize(9);
     p.setFont(lf);
 
     for (int i = 0; i < n; ++i) {
@@ -132,12 +132,12 @@ CostTab::CostTab(QWidget *parent) : QWidget(parent)
     tl->setSpacing(12);
 
     auto *ttl = new QLabel("Data Cost", topBar);
-    ttl->setStyleSheet("color:#cccccc;font-size:17px;font-weight:600;"
-                       "font-family:'Ubuntu Mono';");
+    ttl->setStyleSheet("color:#ffffff;font-size:17px;font-weight:600;"
+                       "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
 
     // Settings
     auto *rateLabel = new QLabel("Rate: ₹", topBar);
-    rateLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Ubuntu Mono';");
+    rateLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_rateSpinBox = new QDoubleSpinBox(topBar);
     m_rateSpinBox->setRange(0.1, 10000.0);
     m_rateSpinBox->setDecimals(2);
@@ -145,7 +145,7 @@ CostTab::CostTab(QWidget *parent) : QWidget(parent)
     m_rateSpinBox->setFixedWidth(90);
 
     auto *perGb = new QLabel("/GB    Limit:", topBar);
-    perGb->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Ubuntu Mono';");
+    perGb->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_limitSpinBox = new QDoubleSpinBox(topBar);
     m_limitSpinBox->setRange(1.0, 10000.0);
     m_limitSpinBox->setDecimals(0);
@@ -153,7 +153,7 @@ CostTab::CostTab(QWidget *parent) : QWidget(parent)
     m_limitSpinBox->setFixedWidth(80);
 
     auto *gbLabel = new QLabel("GB", topBar);
-    gbLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Ubuntu Mono';");
+    gbLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
 
     auto *saveBtn = new QPushButton("Save", topBar);
     saveBtn->setFixedWidth(70);
