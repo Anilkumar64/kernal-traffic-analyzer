@@ -1,6 +1,7 @@
 #include "ProcReader.h"
 #include <QFile>
 #include <QTextStream>
+#include <QSet>
 
 static QStringList splitLine(const QString &line) { return line.split('|'); }
 static void skipHeader(QTextStream &in)
@@ -41,6 +42,7 @@ QString ProcReader::connKey(const TrafficEntry &e)
 QVector<TrafficEntry> ProcReader::readConnections()
 {
     QVector<TrafficEntry> r;
+    QSet<QString> activeKeys;
     QFile f("/proc/traffic_analyzer");
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
         return r;
@@ -80,6 +82,7 @@ QVector<TrafficEntry> ProcReader::readConnections()
 
         // Push current rates into history ring buffer
         QString key = connKey(e);
+        activeKeys.insert(key);
         s_histOut[key].push(e.rateOutBps);
         s_histIn[key].push(e.rateInBps);
         e.histOut = s_histOut[key];
@@ -87,6 +90,18 @@ QVector<TrafficEntry> ProcReader::readConnections()
 
         r.append(e);
     }
+
+    for (auto it = s_histOut.begin(); it != s_histOut.end(); )
+        if (!activeKeys.contains(it.key()))
+            it = s_histOut.erase(it);
+        else
+            ++it;
+    for (auto it = s_histIn.begin(); it != s_histIn.end(); )
+        if (!activeKeys.contains(it.key()))
+            it = s_histIn.erase(it);
+        else
+            ++it;
+
     return r;
 }
 
