@@ -14,12 +14,25 @@ bool FirewallManager::isAvailable()
     p.waitForFinished(2000);
     return p.exitCode() == 0;
 }
-bool FirewallManager::runIptables(const QStringList &args)
+bool FirewallManager::runIptables(const QStringList &args, QString *error)
 {
     QProcess p;
     p.start("iptables", args);
-    p.waitForFinished(5000);
-    return p.exitCode() == 0;
+    if (!p.waitForFinished(5000)) {
+        if (error)
+            *error = "iptables timed out";
+        return false;
+    }
+    if (p.exitCode() != 0) {
+        if (error) {
+            QString stderrText = QString::fromLocal8Bit(p.readAllStandardError()).trimmed();
+            *error = stderrText.isEmpty()
+                ? QString("iptables exited with code %1").arg(p.exitCode())
+                : stderrText;
+        }
+        return false;
+    }
+    return true;
 }
 bool FirewallManager::blockIp(const QString &ip, const QString &comment)
 {
@@ -41,10 +54,15 @@ bool FirewallManager::unblock(const QString &ruleId)
 {
     for (int i = 0; i < m_rules.size(); ++i) {
         if (m_rules[i].id == ruleId) {
-            const FirewallRule &r = m_rules[i];
-            runIptables({"-D","OUTPUT","-d",r.destIp,"-j","DROP",
-                         "-m","comment","--comment",
-                         r.comment.isEmpty() ? "kta-block" : r.comment});
+            const FirewallRule r = m_rules[i];
+            QString error;
+            if (!runIptables({"-D","OUTPUT","-d",r.destIp,"-j","DROP",
+                              "-m","comment","--comment",
+                              r.comment.isEmpty() ? "kta-block" : r.comment},
+                             &error)) {
+                emit unblockFailed(r.destIp, error);
+                return false;
+            }
             m_blockedIps.remove(r.destIp);
             m_rules.removeAt(i);
             emit rulesChanged();
