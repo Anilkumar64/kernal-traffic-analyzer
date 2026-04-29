@@ -23,12 +23,12 @@ FirewallTab::FirewallTab(QWidget *parent) : QWidget(parent)
     topBar->setFixedHeight(64);
     auto *tl = new QHBoxLayout(topBar);
     tl->setContentsMargins(24, 0, 24, 0);
-    auto *ttl = new QLabel("Firewall & Throttle", topBar);
-    ttl->setStyleSheet("color:#cccccc;font-size:17px;font-weight:600;"
-                       "font-family:'Ubuntu Mono';");
+    auto *ttl = new QLabel("Firewall", topBar);
+    ttl->setStyleSheet("color:#ffffff;font-size:17px;font-weight:600;"
+                       "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_statusLabel = new QLabel("", topBar);
     m_statusLabel->setStyleSheet("color:#8a8a8a;font-size:14px;"
-                                 "font-family:'Ubuntu Mono';");
+                                 "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
 
     auto *unblockAll = new QPushButton("Unblock All", topBar);
     unblockAll->setFixedWidth(110);
@@ -39,7 +39,6 @@ FirewallTab::FirewallTab(QWidget *parent) : QWidget(parent)
     connect(unblockAll, &QPushButton::clicked, this, [this]()
             {
         FirewallManager::instance().unblockAll();
-        BandwidthThrottler::instance().removeAll();
         rebuild(); });
 
     tl->addWidget(ttl);
@@ -61,9 +60,9 @@ FirewallTab::FirewallTab(QWidget *parent) : QWidget(parent)
         "QTabBar::tab{background:transparent;color:#8a8a8a;"
         "padding:10px 20px;border:none;"
         "border-bottom:2px solid transparent;font-size:13px;"
-        "font-family:'Ubuntu Mono';}"
+        "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;}"
         "QTabBar::tab:selected{color:#cccccc;"
-        "border-bottom:2px solid #6366f1;}"
+        "border-bottom:2px solid #3794ff;}"
         "QTabBar::tab:hover{color:#cccccc;background:#3e3e42;}");
 
     // Tab 1: Active Connections
@@ -74,7 +73,7 @@ FirewallTab::FirewallTab(QWidget *parent) : QWidget(parent)
         "  Click a connection to block its IP address", connWidget);
     chdr->setFixedHeight(40);
     chdr->setStyleSheet("background:#1a1a1a;color:#8a8a8a;"
-                        "font-size:13px;font-family:'Ubuntu Mono';"
+                        "font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;"
                         "border-bottom:1px solid #555555;");
     cl->addWidget(chdr);
     m_connTable = new QTableWidget(0, 6, connWidget);
@@ -103,7 +102,7 @@ FirewallTab::FirewallTab(QWidget *parent) : QWidget(parent)
         "  Current iptables OUTPUT rules added by KTA", rulesWidget);
     rhdr->setFixedHeight(40);
     rhdr->setStyleSheet("background:#1a1a1a;color:#8a8a8a;"
-                        "font-size:13px;font-family:'Ubuntu Mono';"
+                        "font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;"
                         "border-bottom:1px solid #555555;");
     rl->addWidget(rhdr);
     m_rulesTable = new QTableWidget(0, 5, rulesWidget);
@@ -118,33 +117,16 @@ FirewallTab::FirewallTab(QWidget *parent) : QWidget(parent)
     rl->addWidget(m_rulesTable, 1);
     tabs->addTab(rulesWidget, "Firewall Rules");
 
-    // Tab 3: Bandwidth Throttle
-    auto *throttleWidget = new QWidget(tabs);
-    auto *ttl2 = new QVBoxLayout(throttleWidget);
-    ttl2->setContentsMargins(0, 0, 0, 0);
-    auto *thdr = new QLabel(
-        "  Set bandwidth limits per process (requires root + tc)", throttleWidget);
-    thdr->setFixedHeight(40);
-    thdr->setStyleSheet("background:#1a1a1a;color:#8a8a8a;"
-                        "font-size:13px;font-family:'Ubuntu Mono';"
-                        "border-bottom:1px solid #555555;");
-    ttl2->addWidget(thdr);
-    m_throttleTable = new QTableWidget(0, 4, throttleWidget);
-    m_throttleTable->setHorizontalHeaderLabels(
-        {"PROCESS", "CURRENT RATE", "LIMIT", "ACTION"});
-    m_throttleTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_throttleTable->setAlternatingRowColors(true);
-    m_throttleTable->setShowGrid(false);
-    m_throttleTable->verticalHeader()->setVisible(false);
-    m_throttleTable->verticalHeader()->setDefaultSectionSize(48);
-    m_throttleTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    ttl2->addWidget(m_throttleTable, 1);
-    tabs->addTab(throttleWidget, "Bandwidth Throttle");
-
     outer->addWidget(tabs, 1);
 
     connect(&FirewallManager::instance(), &FirewallManager::rulesChanged,
             this, &FirewallTab::onRulesChanged);
+    connect(&FirewallManager::instance(), &FirewallManager::unblockFailed,
+            this, [this](const QString &ip, const QString &error) {
+                QMessageBox::warning(this, "Unblock failed",
+                                     QString("Could not remove iptables rule for %1.\n%2")
+                                         .arg(ip, error));
+            });
 }
 
 void FirewallTab::updateData(const QVector<TrafficEntry> &conns,
@@ -207,7 +189,7 @@ void FirewallTab::rebuild()
             btn->setStyleSheet(
                 "QPushButton{background:#0a2318;border:1px solid #10b981;"
                 "border-radius:5px;color:#10b981;padding:4px 8px;font-size:11px;"
-                "font-family:'Ubuntu Mono';}"
+                "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;}"
                 "QPushButton:hover{background:#10b981;color:#252526;}");
             connect(btn, &QPushButton::clicked, this, [ip, this]()
                     {
@@ -224,7 +206,7 @@ void FirewallTab::rebuild()
             btn->setStyleSheet(
                 "QPushButton{background:#2e1515;border:1px solid #ef4444;"
                 "border-radius:5px;color:#ef4444;padding:4px 8px;font-size:11px;"
-                "font-family:'Ubuntu Mono';}"
+                "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;}"
                 "QPushButton:hover{background:#ef4444;color:#cccccc;}"
                 "QPushButton:disabled{color:#8a8a8a;border-color:#555555;}");
             connect(btn, &QPushButton::clicked, this, [ip, proc, this]()
@@ -259,7 +241,7 @@ void FirewallTab::rebuild()
         ubtn->setStyleSheet(
             "QPushButton{background:#0a2318;border:1px solid #10b981;"
             "border-radius:5px;color:#10b981;padding:4px 8px;font-size:11px;"
-            "font-family:'Ubuntu Mono';}"
+            "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;}"
             "QPushButton:hover{background:#10b981;color:#252526;}");
         QString rid = r.id;
         connect(ubtn, &QPushButton::clicked, this, [rid]()
@@ -268,90 +250,8 @@ void FirewallTab::rebuild()
     }
 
     // Status
-    bool tcAvail = BandwidthThrottler::isAvailable();
     m_statusLabel->setText(
-        QString("iptables: %1  |  tc: %2  |  Rules: %3")
+        QString("iptables: %1  |  Rules: %2")
             .arg(fwAvail ? "ready" : "need root")
-            .arg(tcAvail ? "ready" : "not found")
             .arg(rules.size()));
-
-    rebuildThrottleTable();
 }
-
-void FirewallTab::rebuildThrottleTable()
-{
-    bool tcAvail = BandwidthThrottler::isAvailable();
-    m_throttleTable->setRowCount(m_procs.size());
-
-    auto fmtR = [](quint32 b) -> QString
-    {
-        if(b<1024)return QString("%1B/s").arg(b);
-        if(b<1048576)return QString("%1KB/s").arg(b/1024.0,0,'f',1);
-        return QString("%1MB/s").arg(b/1048576.0,0,'f',1); };
-
-    auto item = [](const QString &t, const QColor &c) -> QTableWidgetItem *
-    {
-        auto*it=new QTableWidgetItem(t);
-        it->setForeground(QBrush(c));
-        it->setFlags(Qt::ItemIsEnabled|Qt::ItemIsSelectable);
-        return it; };
-
-    for (int i = 0; i < m_procs.size(); ++i)
-    {
-        const ProcEntry &p = m_procs[i];
-        bool throttled = BandwidthThrottler::instance().isThrottled(p.process);
-        quint32 limit = BandwidthThrottler::instance().getLimit(p.process);
-
-        m_throttleTable->setItem(i, 0, item(p.process, QColor("#cccccc")));
-        m_throttleTable->setItem(i, 1, item(fmtR(p.rateOutBps + p.rateInBps), QColor("#8a8a8a")));
-        m_throttleTable->setItem(i, 2, item(throttled ? fmtR(limit * 1024) : "Unlimited", throttled ? QColor("#ce9178") : QColor("#10b981")));
-
-        auto *row = new QWidget(m_throttleTable);
-        auto *rl = new QHBoxLayout(row);
-        rl->setContentsMargins(4, 2, 4, 2);
-        rl->setSpacing(6);
-
-        auto *spin = new QDoubleSpinBox(row);
-        spin->setRange(10, 100000);
-        spin->setValue(throttled ? limit : 1000);
-        spin->setSuffix(" KB/s");
-        spin->setFixedWidth(110);
-        spin->setEnabled(tcAvail);
-
-        auto *setBtn = new QPushButton("Limit", row);
-        setBtn->setFixedWidth(60);
-        setBtn->setEnabled(tcAvail);
-        setBtn->setStyleSheet(
-            "QPushButton{background:#2e1f15;border:1px solid #ce9178;"
-            "border-radius:5px;color:#ce9178;padding:3px 6px;font-size:11px;"
-            "font-family:'Ubuntu Mono';}"
-            "QPushButton:hover{background:#ce9178;color:#252526;}"
-            "QPushButton:disabled{color:#8a8a8a;border-color:#555555;}");
-
-        QString proc = p.process;
-        int pid = p.pid;
-        connect(setBtn, &QPushButton::clicked, this, [proc, pid, spin]()
-                { BandwidthThrottler::instance().setLimit(
-                      proc, pid, quint32(spin->value())); });
-
-        auto *clearBtn = new QPushButton("Clear", row);
-        clearBtn->setFixedWidth(55);
-        clearBtn->setEnabled(throttled && tcAvail);
-        clearBtn->setStyleSheet(
-            "QPushButton{background:#252526;border:1px solid #555555;"
-            "border-radius:5px;color:#8a8a8a;padding:3px 6px;font-size:11px;"
-            "font-family:'Ubuntu Mono';}"
-            "QPushButton:hover{background:#555555;color:#cccccc;}"
-            "QPushButton:disabled{opacity:0.4;}");
-        connect(clearBtn, &QPushButton::clicked, this, [proc]()
-                { BandwidthThrottler::instance().removeLimit(proc); });
-
-        rl->addWidget(spin);
-        rl->addWidget(setBtn);
-        rl->addWidget(clearBtn);
-        m_throttleTable->setCellWidget(i, 3, row);
-    }
-}
-
-void FirewallTab::blockSelected() {}
-void FirewallTab::unblockSelected() {}
