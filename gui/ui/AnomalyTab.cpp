@@ -19,7 +19,7 @@ AnomalyTab::AnomalyTab(QWidget *parent) : QWidget(parent)
     tl->setContentsMargins(20, 0, 20, 0);
     auto *title = new QLabel("Anomaly Monitor", topBar);
     title->setStyleSheet(
-        "color:#cccccc;font-size:16px;font-weight:600;font-family:'Ubuntu Mono';");
+        "color:#ffffff;font-size:16px;font-weight:600;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_countLabel = new QLabel("", topBar);
     m_countLabel->setStyleSheet("color:#ef4444;font-size:11px;");
     tl->addWidget(title);
@@ -35,7 +35,7 @@ AnomalyTab::AnomalyTab(QWidget *parent) : QWidget(parent)
     // No data label
     m_noDataLabel = new QLabel("No anomalies detected", this);
     m_noDataLabel->setAlignment(Qt::AlignCenter);
-    m_noDataLabel->setStyleSheet("color:#8a8a8a;font-size:16px;font-family:'Ubuntu Mono';");
+    m_noDataLabel->setStyleSheet("color:#8a8a8a;font-size:16px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
 
     // Table
     m_table = new QTableWidget(0, 8, this);
@@ -49,7 +49,7 @@ AnomalyTab::AnomalyTab(QWidget *parent) : QWidget(parent)
     m_table->setAlternatingRowColors(true);
     m_table->setShowGrid(false);
     m_table->verticalHeader()->setVisible(false);
-    m_table->verticalHeader()->setDefaultSectionSize(44);
+    m_table->verticalHeader()->setDefaultSectionSize(42);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_table->horizontalHeader()->setStretchLastSection(false);
     m_table->setColumnWidth(0, 120);
