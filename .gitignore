@@ -2,6 +2,8 @@
 *.ko
 *.mod.c
 *.mod
+*.order
+*.symvers
 *.cmd
 Module.symvers
 modules.order
@@ -22,6 +24,9 @@ CMakeFiles/
 compile_commands.json
 __pycache__/
 *.pyc
+# JSON output files
+*.json
+/var/log/kta_*.log
 .codex
 docs/*
 !docs/ebpf_xdp_feature_stack.md
