@@ -27,6 +27,7 @@ struct flow_entry
 
 void flow_cache_init(void);
 void flow_cache_cleanup(void);
+bool flow_cache_exists(struct flow_key *key);
 pid_t flow_cache_lookup(struct flow_key *key, bool *should_scan);
 void flow_cache_mark_resolved(struct flow_key *key, pid_t pid);
 void flow_cache_mark_negative(struct flow_key *key);
