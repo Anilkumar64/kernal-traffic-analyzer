@@ -21,7 +21,7 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
     $(wildcard include/config/CC_HAS_ASM_INLINE) \
   include/linux/compiler_attributes.h \
   include/linux/compiler-gcc.h \
-    $(wildcard include/config/RETPOLINE) \
+    $(wildcard include/config/MITIGATION_RETPOLINE) \
     $(wildcard include/config/GCC_ASM_GOTO_OUTPUT_WORKAROUND) \
     $(wildcard include/config/ARCH_USE_BUILTIN_BSWAP) \
     $(wildcard include/config/SHADOW_CALL_STACK) \
@@ -89,7 +89,7 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
     $(wildcard include/config/MODVERSIONS) \
   arch/x86/include/asm/linkage.h \
     $(wildcard include/config/CALL_PADDING) \
-    $(wildcard include/config/RETHUNK) \
+    $(wildcard include/config/MITIGATION_RETHUNK) \
     $(wildcard include/config/SLS) \
     $(wildcard include/config/FUNCTION_PADDING_BYTES) \
     $(wildcard include/config/UML) \
@@ -1450,12 +1450,16 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
   include/linux/netfilter_ipv4.h \
     $(wildcard include/config/INET) \
   include/uapi/linux/netfilter_ipv4.h \
-  include/linux/ip.h \
-  include/uapi/linux/ip.h \
-  include/linux/udp.h \
-  include/net/inet_sock.h \
-  include/linux/jhash.h \
-  include/linux/unaligned/packed_struct.h \
+  include/linux/netfilter_ipv6.h \
+    $(wildcard include/config/SYN_COOKIES) \
+  include/uapi/linux/netfilter_ipv6.h \
+  include/net/tcp.h \
+    $(wildcard include/config/TCP_MD5SIG) \
+    $(wildcard include/config/TCP_AO) \
+    $(wildcard include/config/BPF_STREAM_PARSER) \
+    $(wildcard include/config/BPF) \
+  include/linux/tcp.h \
+  include/linux/win_minmax.h \
   include/net/sock.h \
     $(wildcard include/config/SOCK_RX_QUEUE_MAPPING) \
     $(wildcard include/config/SOCK_VALIDATE_XMIT) \
@@ -1498,13 +1502,19 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
   include/net/fib_rules.h \
   include/uapi/linux/fib_rules.h \
   include/net/fib_notifier.h \
+  include/net/inet_connection_sock.h \
+  include/net/inet_sock.h \
+  include/linux/jhash.h \
+  include/linux/unaligned/packed_struct.h \
   include/net/request_sock.h \
   include/net/netns/hash.h \
-  include/uapi/linux/udp.h \
-  include/net/ip.h \
-  include/net/route.h \
-  include/net/inetpeer.h \
-  include/net/ipv6.h \
+  include/net/inet_timewait_sock.h \
+  include/net/timewait_sock.h \
+  include/uapi/linux/tcp.h \
+  include/net/inet_hashtables.h \
+    $(wildcard include/config/IP_DCCP) \
+  include/linux/ip.h \
+  include/uapi/linux/ip.h \
   include/linux/ipv6.h \
     $(wildcard include/config/IPV6_ROUTER_PREF) \
     $(wildcard include/config/IPV6_ROUTE_INFO) \
@@ -1512,15 +1522,12 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
     $(wildcard include/config/IPV6_SEG6_HMAC) \
     $(wildcard include/config/IPV6_MIP6) \
   include/uapi/linux/ipv6.h \
-  include/linux/tcp.h \
-    $(wildcard include/config/TCP_AO) \
-    $(wildcard include/config/BPF) \
-    $(wildcard include/config/TCP_MD5SIG) \
-  include/linux/win_minmax.h \
-  include/net/inet_connection_sock.h \
-  include/net/inet_timewait_sock.h \
-  include/net/timewait_sock.h \
-  include/uapi/linux/tcp.h \
+  include/linux/udp.h \
+  include/uapi/linux/udp.h \
+  include/net/ip.h \
+  include/net/route.h \
+  include/net/inetpeer.h \
+  include/net/ipv6.h \
   include/linux/jump_label_ratelimit.h \
   include/net/if_inet6.h \
   include/net/inet_dscp.h \
@@ -1536,6 +1543,109 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
   include/uapi/linux/route.h \
   include/net/lwtunnel.h \
   include/uapi/linux/lwtunnel.h \
+  include/net/sock_reuseport.h \
+  include/linux/filter.h \
+    $(wildcard include/config/BPF_JIT_ALWAYS_ON) \
+    $(wildcard include/config/HAVE_EBPF_JIT) \
+  include/linux/bpf.h \
+    $(wildcard include/config/FINEIBT) \
+  include/uapi/linux/bpf.h \
+    $(wildcard include/config/BPF_LIRC_MODE2) \
+    $(wildcard include/config/EFFICIENT_UNALIGNED_ACCESS) \
+    $(wildcard include/config/BPF_KPROBE_OVERRIDE) \
+  include/uapi/linux/bpf_common.h \
+  include/uapi/linux/filter.h \
+  include/linux/kallsyms.h \
+    $(wildcard include/config/KALLSYMS_ALL) \
+  include/linux/bpfptr.h \
+  include/linux/btf.h \
+  include/linux/bsearch.h \
+  include/linux/btf_ids.h \
+  include/uapi/linux/btf.h \
+  include/linux/rcupdate_trace.h \
+    $(wildcard include/config/TASKS_TRACE_RCU_READ_MB) \
+  include/linux/static_call.h \
+  include/linux/cpu.h \
+    $(wildcard include/config/GENERIC_CPU_DEVICES) \
+    $(wildcard include/config/PM_SLEEP_SMP) \
+    $(wildcard include/config/PM_SLEEP_SMP_NONZERO_CPU) \
+    $(wildcard include/config/ARCH_HAS_CPU_FINALIZE_INIT) \
+    $(wildcard include/config/CPU_MITIGATIONS) \
+  include/linux/node.h \
+    $(wildcard include/config/HMEM_REPORTING) \
+  include/linux/cpuhotplug.h \
+    $(wildcard include/config/HOTPLUG_CORE_SYNC_DEAD) \
+  arch/x86/include/asm/static_call.h \
+  arch/x86/include/asm/text-patching.h \
+    $(wildcard include/config/UML_X86) \
+  include/linux/cfi.h \
+    $(wildcard include/config/CFI_CLANG) \
+  arch/x86/include/asm/cfi.h \
+  include/linux/bpf_types.h \
+    $(wildcard include/config/NETFILTER_BPF_LINK) \
+  include/linux/sched/clock.h \
+    $(wildcard include/config/ARCH_WANTS_NO_INSTR) \
+    $(wildcard include/config/GENERIC_SCHED_CLOCK) \
+    $(wildcard include/config/HAVE_UNSTABLE_SCHED_CLOCK) \
+  include/linux/set_memory.h \
+    $(wildcard include/config/ARCH_HAS_SET_MEMORY) \
+    $(wildcard include/config/ARCH_HAS_SET_DIRECT_MAP) \
+  arch/x86/include/asm/set_memory.h \
+  include/asm-generic/set_memory.h \
+  include/linux/if_vlan.h \
+  include/linux/etherdevice.h \
+  include/linux/crc32.h \
+  include/linux/bitrev.h \
+    $(wildcard include/config/HAVE_ARCH_BITREVERSE) \
+  arch/x86/include/generated/asm/unaligned.h \
+  include/asm-generic/unaligned.h \
+  include/uapi/linux/if_vlan.h \
+  include/crypto/sha1.h \
+  include/net/sch_generic.h \
+  include/net/gen_stats.h \
+  include/uapi/linux/gen_stats.h \
+  include/net/flow_offload.h \
+  include/net/tcp_ao.h \
+  include/net/inet_ecn.h \
+  include/net/dsfield.h \
+  include/net/mptcp.h \
+    $(wildcard include/config/MPTCP_IPV6) \
+  include/net/xfrm.h \
+    $(wildcard include/config/XFRM_SUB_POLICY) \
+    $(wildcard include/config/NET_PKTGEN) \
+    $(wildcard include/config/XFRM_MIGRATE) \
+    $(wildcard include/config/XFRM_USER_COMPAT) \
+    $(wildcard include/config/XFRM_INTERFACE) \
+  include/uapi/linux/pfkeyv2.h \
+  include/uapi/linux/ipsec.h \
+  include/linux/audit.h \
+    $(wildcard include/config/AUDIT_COMPAT_GENERIC) \
+  include/linux/ptrace.h \
+  include/linux/pid_namespace.h \
+    $(wildcard include/config/MEMFD_CREATE) \
+    $(wildcard include/config/PID_NS) \
+  include/uapi/linux/ptrace.h \
+  include/linux/seccomp.h \
+    $(wildcard include/config/HAVE_ARCH_SECCOMP_FILTER) \
+    $(wildcard include/config/SECCOMP_FILTER) \
+    $(wildcard include/config/CHECKPOINT_RESTORE) \
+    $(wildcard include/config/SECCOMP_CACHE_DEBUG) \
+  include/uapi/linux/seccomp.h \
+  arch/x86/include/asm/seccomp.h \
+  arch/x86/include/asm/ia32_unistd.h \
+  include/asm-generic/seccomp.h \
+  include/linux/audit_arch.h \
+  include/uapi/linux/audit.h \
+  include/uapi/linux/netfilter/nf_tables.h \
+  include/uapi/linux/fanotify.h \
+  arch/x86/include/asm/syscall.h \
+  include/net/ip6_fib.h \
+  include/linux/ipv6_route.h \
+  include/uapi/linux/ipv6_route.h \
+  include/net/gro_cells.h \
+  include/linux/bpf-cgroup.h \
+  include/net/addrconf.h \
+  include/net/netfilter/ipv6/nf_defrag_ipv6.h \
   /home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/src/../include/traffic_analyzer.h \
   /home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/src/../include/dns_parser.h \
   /home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/src/../include/flow_cache.h \
