@@ -11,7 +11,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <cerrno>
 #include <csignal>
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -64,8 +66,14 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::signal(SIGINT, handle_signal);
-    std::signal(SIGTERM, handle_signal);
+    if (std::signal(SIGINT, handle_signal) == SIG_ERR) {
+        std::cerr << "failed to install SIGINT handler: " << std::strerror(errno) << "\n";
+        return 1;
+    }
+    if (std::signal(SIGTERM, handle_signal) == SIG_ERR) {
+        std::cerr << "failed to install SIGTERM handler: " << std::strerror(errno) << "\n";
+        return 1;
+    }
 
     FlowTracker tracker;
     PacketBackend backend(iface, tracker);

@@ -9,7 +9,10 @@
 #include "FlowTracker.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstring>
 #include <ctime>
+#include <iostream>
 
 namespace {
 
@@ -17,6 +20,7 @@ uint64_t monotonic_ns()
 {
     timespec ts{};
     if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        std::cerr << "clock_gettime(CLOCK_MONOTONIC) failed: " << std::strerror(errno) << "\n";
         return 0;
     }
     return static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL + static_cast<uint64_t>(ts.tv_nsec);
