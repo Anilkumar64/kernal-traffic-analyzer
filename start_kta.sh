@@ -56,4 +56,4 @@ fi
 
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$BUILD_DIR" -- -j"$(nproc)"
-exec "$GUI_BIN"
+"$GUI_BIN"
