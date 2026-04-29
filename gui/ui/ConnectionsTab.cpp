@@ -20,7 +20,7 @@ DetailPanel::DetailPanel(QWidget *parent) : QWidget(parent)
 
     m_process = new QLabel("", this);
     m_process->setStyleSheet(
-        "color:#cccccc;font-size:15px;font-weight:600;font-family:Monospace;");
+        "color:#ffffff;font-size:15px;font-weight:600;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     layout->addWidget(m_process);
 
     auto *statsRow = new QHBoxLayout();
@@ -30,17 +30,17 @@ DetailPanel::DetailPanel(QWidget *parent) : QWidget(parent)
     {
         auto *card = new QWidget(this);
         card->setObjectName("StatCard");
-        card->setFixedHeight(72);
+        card->setFixedHeight(68);
         card->setMinimumWidth(110);
         auto *cl = new QVBoxLayout(card);
         cl->setContentsMargins(16, 10, 16, 10);
         cl->setSpacing(2);
         auto *lbl = new QLabel(label, card);
         lbl->setStyleSheet(
-            "color:#8a8a8a;font-size:14px;letter-spacing:1px;font-family:Monospace;");
+            "color:#8a8a8a;font-size:14px;letter-spacing:1px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
         val = new QLabel("-", card);
         val->setStyleSheet(
-            "color:#cccccc;font-size:22px;font-weight:600;font-family:Monospace;");
+            "color:#cccccc;font-size:22px;font-weight:600;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
         cl->addWidget(lbl);
         cl->addWidget(val);
         statsRow->addWidget(card);
@@ -52,9 +52,9 @@ DetailPanel::DetailPanel(QWidget *parent) : QWidget(parent)
     makeCard("DURATION", m_statDuration);
 
     m_domain = new QLabel("", this);
-    m_domain->setStyleSheet("color:#6366f1;font-size:13px;font-family:Monospace;");
+    m_domain->setStyleSheet("color:#6366f1;font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_route = new QLabel("", this);
-    m_route->setStyleSheet("color:#8a8a8a;font-size:10px;font-family:Monospace;");
+    m_route->setStyleSheet("color:#8a8a8a;font-size:10px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
 
     auto *infoRow = new QHBoxLayout();
     infoRow->addWidget(m_domain);
@@ -111,9 +111,9 @@ ConnectionsTab::ConnectionsTab(QWidget *parent) : QWidget(parent)
 
     auto *titleLbl = new QLabel("Live Connections", topBar);
     titleLbl->setStyleSheet(
-        "color:#cccccc;font-size:16px;font-weight:600;font-family:Monospace;");
+        "color:#ffffff;font-size:16px;font-weight:600;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_countLabel = new QLabel("", topBar);
-    m_countLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:Monospace;");
+    m_countLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     tl->addWidget(titleLbl);
     tl->addWidget(m_countLabel);
     tl->addStretch();
