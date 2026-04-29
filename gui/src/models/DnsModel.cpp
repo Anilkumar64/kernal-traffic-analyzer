@@ -45,7 +45,7 @@ QVariant DnsModel::data(const QModelIndex& index, int role) const
         }
     }
     if (role == Qt::TextAlignmentRole && index.column() == ColQueryCount) {
-        return Qt::AlignVCenter | Qt::AlignRight;
+        return QVariant::fromValue(Qt::Alignment(Qt::AlignVCenter | Qt::AlignRight));
     }
     return {};
 }

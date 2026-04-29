@@ -65,7 +65,7 @@ QVariant AnomalyModel::data(const QModelIndex& index, int role) const
         return QBrush(severityColor(rec.severity));
     }
     if (role == Qt::TextAlignmentRole && (index.column() == ColPid || index.column() == ColCount)) {
-        return Qt::AlignVCenter | Qt::AlignRight;
+        return QVariant::fromValue(Qt::Alignment(Qt::AlignVCenter | Qt::AlignRight));
     }
     return {};
 }

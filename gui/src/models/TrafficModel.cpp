@@ -55,9 +55,9 @@ QVariant TrafficModel::data(const QModelIndex& index, int role) const
     }
     if (role == Qt::TextAlignmentRole) {
         if (index.column() == ColPid || index.column() >= ColRateIn) {
-            return Qt::AlignVCenter | Qt::AlignRight;
+            return QVariant::fromValue(Qt::Alignment(Qt::AlignVCenter | Qt::AlignRight));
         }
-        return Qt::AlignVCenter | Qt::AlignLeft;
+        return QVariant::fromValue(Qt::Alignment(Qt::AlignVCenter | Qt::AlignLeft));
     }
     if (role == Qt::ForegroundRole && rec.anomalyFlags != 0) {
         return QBrush(QColor(KtaColors::Warning));

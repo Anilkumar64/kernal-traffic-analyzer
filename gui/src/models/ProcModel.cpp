@@ -91,7 +91,7 @@ QVariant ProcModel::data(const QModelIndex& index, int role) const
         return QBrush(QColor(248, 81, 73, 44));
     }
     if (role == Qt::TextAlignmentRole && index.column() != ColProcess && index.column() != ColTopRemotes) {
-        return Qt::AlignVCenter | Qt::AlignRight;
+        return QVariant::fromValue(Qt::Alignment(Qt::AlignVCenter | Qt::AlignRight));
     }
     return {};
 }

@@ -96,7 +96,7 @@ QVariant RouteModel::data(const QModelIndex& modelIndex, int role) const
         return QBrush(QColor("#8b949e"));
     }
     if (role == Qt::TextAlignmentRole && (modelIndex.column() == ColHopNum || modelIndex.column() == ColRtt)) {
-        return Qt::AlignVCenter | Qt::AlignRight;
+        return QVariant::fromValue(Qt::Alignment(Qt::AlignVCenter | Qt::AlignRight));
     }
     return {};
 }
