@@ -4,7 +4,7 @@ traffic_analyzer-objs := src/module_main.o src/netfilter_hook.o \
   src/sock_cache.o src/inode_cache.o src/flow_cache.o src/exe_resolver.o \
   src/dns_parser.o src/dns_map.o src/route_store.o
 
-ccflags-y := -I$(src)/include -Wall -Wextra
+ccflags-y := -I$(src)/include -Wall
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 KTA_BUILD_DIR ?= /tmp/kta_kernel_module_build

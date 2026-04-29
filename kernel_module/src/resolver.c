@@ -2,7 +2,7 @@
  * @file resolver.c
  * @brief Asynchronous flow-to-PID resolver.
  * @details Hook-time attribution cannot sleep, so unresolved flow keys are
- * queued to system_wq. Worker jobs inspect /proc/net socket tables to find a
+ * queued to a private workqueue. Worker jobs inspect /proc/net socket tables to find a
  * matching inode and then scan task file tables for the owning process before
  * updating inode and flow caches.
  * @author Kernel Traffic Analyzer Project
@@ -26,15 +26,21 @@ struct resolver_work {
 };
 
 static atomic_t resolver_inflight = ATOMIC_INIT(0);
+static struct workqueue_struct *resolver_wq;
 
 /**
  * resolver_init() - Initialize async resolver state.
  * @return: Zero on success.
- * @note: Work is queued on system_wq; no private workqueue is allocated.
+ * @note: A private queue lets module teardown drain only KTA resolver work.
  */
 int resolver_init(void)
 {
 	atomic_set(&resolver_inflight, 0);
+	resolver_wq = alloc_workqueue("kta_resolver", WQ_UNBOUND | WQ_MEM_RECLAIM, 0);
+	if (!resolver_wq) {
+		pr_err("kta: resolver: workqueue allocation failed\n");
+		return -ENOMEM;
+	}
 	return 0;
 }
 
@@ -45,7 +51,11 @@ int resolver_init(void)
  */
 void resolver_exit(void)
 {
-	flush_scheduled_work();
+	if (resolver_wq) {
+		flush_workqueue(resolver_wq);
+		destroy_workqueue(resolver_wq);
+		resolver_wq = NULL;
+	}
 	atomic_set(&resolver_inflight, 0);
 }
 
@@ -244,7 +254,7 @@ void resolver_schedule(const struct flow_key *key)
 	struct resolver_work *job;
 	struct flow_key canonical;
 
-	if (!key || !flow_cache_should_scan(key))
+	if (!key || !resolver_wq || !flow_cache_should_scan(key))
 		return;
 	if (atomic_inc_return(&resolver_inflight) > RESOLVER_MAX_INFLIGHT) {
 		atomic_dec(&resolver_inflight);
@@ -263,6 +273,8 @@ void resolver_schedule(const struct flow_key *key)
 	job->key = canonical;
 	INIT_WORK(&job->work, resolver_worker);
 	flow_cache_set_scanned(&canonical);
-	queue_work(system_wq, &job->work);
+	if (!queue_work(resolver_wq, &job->work)) {
+		atomic_dec(&resolver_inflight);
+		kfree(job);
+	}
 }
-

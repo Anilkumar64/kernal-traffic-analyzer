@@ -9,7 +9,9 @@ optionally enriches hops with GeoIP2, writes results to
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -49,24 +51,21 @@ class GeoEnricher:
 
     def enrich(self, ip_str: str) -> dict[str, Any]:
         """Return country, coordinates, ASN, and organization for an IP."""
-        if ip_str == "*":
-            return {}
-
         result: dict[str, Any] = {}
         if self.city_reader is not None:
             try:
                 city = self.city_reader.city(ip_str)
-                result["country"] = city.country.iso_code or ""
-                result["lat"] = city.location.latitude if city.location.latitude is not None else ""
-                result["lon"] = city.location.longitude if city.location.longitude is not None else ""
+                result["country"] = city.country.iso_code or "-"
+                result["lat"] = city.location.latitude if city.location.latitude is not None else "0"
+                result["lon"] = city.location.longitude if city.location.longitude is not None else "0"
             except Exception:  # noqa: BLE001 - missing GeoIP records are expected.
                 pass
 
         if self.asn_reader is not None:
             try:
                 asn = self.asn_reader.asn(ip_str)
-                result["asn"] = asn.autonomous_system_number or ""
-                result["org"] = asn.autonomous_system_organization or ""
+                result["asn"] = asn.autonomous_system_number or "-"
+                result["org"] = asn.autonomous_system_organization or "-"
             except Exception:  # noqa: BLE001 - missing GeoIP records are expected.
                 pass
 
@@ -85,12 +84,14 @@ class RouteTracer:
         try:
             proc = subprocess.run(
                 ["traceroute", "-T", "-n", "-q1", "-w1", ip_str],
-                check=True,
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=30,
             )
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        except subprocess.TimeoutExpired:
+            return []
+        if proc.returncode not in (0, 1):
             return []
 
         hops: list[dict[str, Any]] = []
@@ -105,11 +106,6 @@ class RouteTracer:
                 }
                 hop.update(self.enricher.enrich(hop_ip))
                 hops.append(hop)
-                continue
-
-            timeout_match = re.match(r"^\s*(\d+)\s+\*\s+\*\s+\*", line)
-            if timeout_match:
-                hops.append({"hop": int(timeout_match.group(1)), "ip": "*", "rtt_ms": 0.0})
 
         return hops
 
@@ -121,11 +117,29 @@ class ProcWriter:
     PROC_PENDING = "/proc/traffic_analyzer_routes_pending"
     LOG_PATH = "/var/log/kta_route_daemon.log"
 
+    @staticmethod
+    def _valid_ipv4(value: str) -> bool:
+        try:
+            ipaddress.IPv4Address(value)
+        except ValueError:
+            return False
+        return True
+
+    @staticmethod
+    def _field(value: Any, default: str = "-") -> str:
+        text = str(value if value not in (None, "") else default)
+        text = text.strip().replace("|", "_").replace("\n", "_").replace("\r", "_")
+        return text or default
+
     def read_pending(self) -> list[str]:
         """Read pending target IPs from procfs, returning an empty list if absent."""
         try:
             with open(self.PROC_PENDING, "r", encoding="utf-8") as pending:
-                return [line.strip() for line in pending if line.strip()]
+                return [
+                    line.strip()
+                    for line in pending
+                    if line.strip() and self._valid_ipv4(line.strip())
+                ]
         except FileNotFoundError:
             return []
         except OSError as exc:
@@ -134,19 +148,28 @@ class ProcWriter:
 
     def write_result(self, target_ip: str, hops: list[dict[str, Any]]) -> None:
         """Write traceroute hop results to the kernel route proc file."""
-        lines = []
         for hop in hops:
-            lines.append(
-                f"{target_ip}|{hop['hop']}|{hop['ip']}|{hop['rtt_ms']:.1f}|"
-                f"{hop.get('country', '')}|{hop.get('lat', '')}|{hop.get('lon', '')}|"
-                f"{hop.get('asn', '')}|{hop.get('org', '')}\n"
+            hop_ip = self._field(hop.get("ip"))
+            if not self._valid_ipv4(hop_ip):
+                continue
+
+            row = (
+                f"{target_ip}|{int(hop['hop'])}|{hop_ip}|{int(round(float(hop['rtt_ms'])))}|"
+                f"{self._field(hop.get('country'))}|"
+                f"{self._field(hop.get('lat'), '0')}|"
+                f"{self._field(hop.get('lon'), '0')}|"
+                f"{self._field(hop.get('asn'))}|"
+                f"{self._field(hop.get('org'))}\n"
             )
 
-        try:
-            with open(self.PROC_ROUTES, "w", encoding="utf-8") as routes:
-                routes.writelines(lines)
-        except OSError as exc:
-            logging.getLogger(__name__).warning("Failed writing routes for %s: %s", target_ip, exc)
+            try:
+                fd = os.open(self.PROC_ROUTES, os.O_WRONLY)
+                try:
+                    os.write(fd, row.encode("utf-8"))
+                finally:
+                    os.close(fd)
+            except OSError as exc:
+                logging.getLogger(__name__).warning("Failed writing route row %s: %s", row.strip(), exc)
 
 
 class RouteDaemon:

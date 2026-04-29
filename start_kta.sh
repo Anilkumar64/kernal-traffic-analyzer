@@ -173,7 +173,7 @@ require_root() {
 
     need sudo
     log "Root is required to load the kernel module. Re-running with sudo."
-    exec sudo --preserve-env=DISPLAY,WAYLAND_DISPLAY,XAUTHORITY,XDG_RUNTIME_DIR,DBUS_SESSION_BUS_ADDRESS,KTA_BUILD_DIR,KTA_LOG_DIR,KTA_ROUTE_DAEMON,KTA_START_BACKEND,KTA_BACKEND_IFACE,KTA_BACKEND_OUTPUT \
+    exec sudo --preserve-env=DISPLAY,WAYLAND_DISPLAY,XAUTHORITY,XDG_RUNTIME_DIR,DBUS_SESSION_BUS_ADDRESS,QT_QPA_PLATFORM,KTA_BUILD_DIR,KTA_LOG_DIR,KTA_ROUTE_DAEMON,KTA_START_BACKEND,KTA_BACKEND_IFACE,KTA_BACKEND_OUTPUT \
         bash "$0" "$@"
 }
 
@@ -317,7 +317,7 @@ real_user() {
 }
 
 run_gui_as_desktop_user() {
-    local gui_bin user uid home_dir runtime_dir
+    local gui_bin user uid home_dir runtime_dir qt_qpa_platform
 
     gui_bin="$(find_executable \
         "$BUILD_DIR/gui/kta_gui" \
@@ -337,10 +337,14 @@ run_gui_as_desktop_user() {
     if [[ -z "${XAUTHORITY:-}" && -n "$home_dir" && -f "$home_dir/.Xauthority" ]]; then
         export XAUTHORITY="$home_dir/.Xauthority"
     fi
+    qt_qpa_platform="${QT_QPA_PLATFORM:-}"
+    if [[ -z "$qt_qpa_platform" && -n "${DISPLAY:-}" ]]; then
+        qt_qpa_platform="xcb"
+    fi
 
     log "Launching GUI: $gui_bin"
     if [[ "$user" == "root" ]]; then
-        "$gui_bin" "${GUI_ARGS[@]}"
+        QT_QPA_PLATFORM="$qt_qpa_platform" "$gui_bin" "${GUI_ARGS[@]}"
     else
         sudo -u "$user" env \
             HOME="$home_dir" \
@@ -348,6 +352,7 @@ run_gui_as_desktop_user() {
             LOGNAME="$user" \
             DISPLAY="${DISPLAY:-}" \
             WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+            QT_QPA_PLATFORM="$qt_qpa_platform" \
             XAUTHORITY="${XAUTHORITY:-}" \
             XDG_RUNTIME_DIR="$runtime_dir" \
             DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
