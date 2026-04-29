@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 6.4 REQUIRED COMPONENTS Core Widgets Sql Charts Network)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Widgets Sql Charts Network)
 find_package(SQLite3 REQUIRED)
 
 set(SOURCES

@@ -69,6 +69,25 @@ need() {
     command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
+version_ge() {
+    local have="$1"
+    local want="$2"
+    printf '%s\n%s\n' "$want" "$have" | sort -V -C
+}
+
+check_qt_version() {
+    local qt_version
+
+    if ! command -v qmake6 >/dev/null 2>&1; then
+        return
+    fi
+
+    qt_version="$(qmake6 -query QT_VERSION 2>/dev/null || true)"
+    if [[ -n "$qt_version" ]] && ! version_ge "$qt_version" "6.2"; then
+        die "Qt 6.2 or newer is required by gui/CMakeLists.txt; qmake6 reports Qt $qt_version"
+    fi
+}
+
 module_loaded() {
     lsmod | awk '{print $1}' | grep -qx "$MODULE_NAME"
 }
@@ -168,11 +187,13 @@ preflight() {
     need nproc
     need python3
     need rmmod
+    need sort
 
     [[ -d "$KERNEL_DIR" ]] || die "missing kernel module directory: $KERNEL_DIR"
     [[ -f "$KERNEL_DIR/Makefile" ]] || die "missing kernel module Makefile"
     [[ -f "$ROOT_DIR/CMakeLists.txt" ]] || die "missing top-level CMakeLists.txt"
     [[ -d "/lib/modules/$(uname -r)/build" ]] || die "missing kernel headers for $(uname -r)"
+    check_qt_version
 
     if [[ "$START_ROUTE_DAEMON" -eq 1 ]]; then
         [[ -f "$ROUTE_DAEMON" ]] || die "missing route daemon: $ROUTE_DAEMON"
