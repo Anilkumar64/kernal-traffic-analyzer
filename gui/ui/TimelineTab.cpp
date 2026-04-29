@@ -50,8 +50,8 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
     int graphW = r.width() - LABEL_W - 8;
 
     // Time axis
-    QFont tf("Ubuntu Mono");
-    tf.setPixelSize(9);
+    QFont tf("Segoe UI");
+    tf.setPixelSize(11);
     p.setFont(tf);
     p.setPen(QPen(QColor("#3e3e42"), 1, Qt::DotLine));
     for (int i = 0; i <= 6; ++i)
@@ -59,7 +59,7 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
         qint64 ts = tMin + i * (WINDOW_SECS / 6);
         int x = LABEL_W + int(double(ts - tMin) / WINDOW_SECS * graphW);
         p.drawLine(x, 0, x, r.height());
-        p.setPen(QColor("#8a8a8a"));
+        p.setPen(QColor("#6a6a6a"));
         p.drawText(QRect(x - 25, r.height() - 16, 50, 14),
                    Qt::AlignCenter,
                    QDateTime::fromSecsSinceEpoch(ts).toString("hh:mm"));
@@ -68,7 +68,7 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
 
     if (m_entries.isEmpty())
     {
-        QFont nf("Ubuntu Mono");
+        QFont nf("Segoe UI");
         nf.setPixelSize(13);
         p.setFont(nf);
         p.setPen(QColor("#555555"));
@@ -77,7 +77,7 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
         return;
     }
 
-    QFont lf("Ubuntu Mono");
+    QFont lf("Segoe UI");
     lf.setPixelSize(12);
     p.setFont(lf);
 
@@ -89,7 +89,7 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
 
         // Row background
         QColor rowBg = (i == m_hoverRow) ? QColor("#3e3e42") : (i % 2 == 0) ? QColor("#252526")
-                                                                            : QColor("#0d1219");
+                                                                            : QColor("#252526");
         p.fillRect(rowR, rowBg);
 
         // Label
@@ -134,7 +134,7 @@ void TimelineCanvas::paintEvent(QPaintEvent *)
         // Protocol label inside bar
         if (barR.width() > 40)
         {
-            QFont bf("Ubuntu Mono");
+            QFont bf("Segoe UI");
             bf.setPixelSize(9);
             p.setFont(bf);
             p.setPen(Qt::white);
@@ -194,11 +194,11 @@ TimelineTab::TimelineTab(QWidget *parent) : QWidget(parent)
     tl->setSpacing(12);
 
     auto *ttl = new QLabel("Connection Timeline", topBar);
-    ttl->setStyleSheet("color:#cccccc;font-size:17px;font-weight:600;"
-                       "font-family:'Ubuntu Mono';");
+    ttl->setStyleSheet("color:#ffffff;font-size:17px;font-weight:600;"
+                       "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_countLabel = new QLabel("", topBar);
     m_countLabel->setStyleSheet("color:#8a8a8a;font-size:14px;"
-                                "font-family:'Ubuntu Mono';");
+                                "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_filter = new QComboBox(topBar);
     m_filter->addItems({"All", "TCP", "UDP", "Active"});
     m_filter->setFixedWidth(100);
@@ -230,7 +230,7 @@ TimelineTab::TimelineTab(QWidget *parent) : QWidget(parent)
         d->setFixedSize(10, 10);
         d->setStyleSheet(QString("background:%1;border-radius:5px;").arg(color));
         auto *t = new QLabel(label, leg);
-        t->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Ubuntu Mono';");
+        t->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
         ll->addWidget(d);
         ll->addWidget(t);
     };
@@ -239,7 +239,7 @@ TimelineTab::TimelineTab(QWidget *parent) : QWidget(parent)
     mkDot("#cccccc", "Active edge");
     ll->addStretch();
     auto *winLabel = new QLabel("← 30 min window →", leg);
-    winLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Ubuntu Mono';");
+    winLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     ll->addWidget(winLabel);
     outer->addWidget(leg);
 
