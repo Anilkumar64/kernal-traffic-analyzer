@@ -1,19 +1,30 @@
-# Kernel build
 *.o
 *.ko
-*.mod
 *.mod.c
-*.symvers
+*.mod
+*.cmd
+Module.symvers
 modules.order
+.tmp_versions/
 build/
-
-# Qt / CMake
-gui/build/
+build-*/
+*.pdf
+*.pptx
+*.docx
+*.odt
+*.aux
+*.log
+moc_*
+ui_*
+qrc_*
 CMakeCache.txt
 CMakeFiles/
-
-# binaries
+compile_commands.json
+__pycache__/
+*.pyc
+.codex
+docs/
 traffic_gui
-
-# temp
-*.log
+kernel_traffic_analyzer
+kernel_module/entry.*
+kernel_module/full_test
