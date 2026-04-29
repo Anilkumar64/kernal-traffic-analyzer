@@ -9,7 +9,6 @@
  * @license GPL-2.0
  */
 
-#include <linux/byteorder/generic.h>
 #include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/string.h>

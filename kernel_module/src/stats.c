@@ -28,6 +28,14 @@ static u32 traffic_entries;
 static u32 proc_entries;
 static ktime_t module_started;
 
+struct proc_port_scratch {
+	pid_t pid;
+	__be16 ports[ANOMALY_PORT_SCAN];
+	u32 port_count;
+};
+
+static struct proc_port_scratch proc_port_scratch[MAX_PROC_ENTRIES];
+
 /**
  * state_to_ttl_secs() - Convert a connection state to a TTL.
  * @state: Connection state.
@@ -265,14 +273,10 @@ static void rebuild_proc_list_locked(void)
 {
 	struct traffic_entry *traffic;
 	ktime_t now = ktime_get_real();
-	struct {
-		pid_t pid;
-		__be16 ports[ANOMALY_PORT_SCAN];
-		u32 port_count;
-	} port_scratch[MAX_PROC_ENTRIES];
 	u32 scratch_count = 0;
 
 	clear_proc_list_locked();
+	memset(proc_port_scratch, 0, sizeof(proc_port_scratch));
 
 	list_for_each_entry(traffic, &traffic_list, list) {
 		struct proc_entry *proc;
@@ -318,19 +322,20 @@ static void rebuild_proc_list_locked(void)
 			proc->first_seen = traffic->first_seen;
 
 		for (idx = 0; idx < scratch_count; idx++) {
-			if (port_scratch[idx].pid == traffic->pid)
+			if (proc_port_scratch[idx].pid == traffic->pid)
 				break;
 		}
 		if (idx == scratch_count && scratch_count < MAX_PROC_ENTRIES) {
-			port_scratch[idx].pid = traffic->pid;
-			port_scratch[idx].port_count = 0;
+			proc_port_scratch[idx].pid = traffic->pid;
+			proc_port_scratch[idx].port_count = 0;
 			scratch_count++;
 		}
 		if (idx < scratch_count) {
-			proc_count_unique_port(port_scratch[idx].ports,
-					       &port_scratch[idx].port_count,
+			proc_count_unique_port(proc_port_scratch[idx].ports,
+					       &proc_port_scratch[idx].port_count,
 					       traffic->key.dst_port);
-			proc->unique_dst_ports = port_scratch[idx].port_count;
+			proc->unique_dst_ports =
+				proc_port_scratch[idx].port_count;
 		}
 	}
 
@@ -715,4 +720,3 @@ u64 stats_get_uptime_sec(void)
 	return div_s64(ktime_ms_delta(ktime_get_real(), module_started),
 		       MSEC_PER_SEC);
 }
-
