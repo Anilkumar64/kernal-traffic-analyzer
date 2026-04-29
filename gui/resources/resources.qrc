@@ -1,0 +1,13 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/">
+    <file>style/kta_dark.qss</file>
+    <file>icons/connections.svg</file>
+    <file>icons/processes.svg</file>
+    <file>icons/dns.svg</file>
+    <file>icons/anomaly.svg</file>
+    <file>icons/routes.svg</file>
+    <file>icons/history.svg</file>
+    <file>icons/performance.svg</file>
+  </qresource>
+</RCC>
