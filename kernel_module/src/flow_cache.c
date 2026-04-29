@@ -151,6 +151,10 @@ pid_t flow_cache_lookup(const struct flow_key *key)
 	hash_for_each_possible(flow_hash, entry, hnode, hash) {
 		if (!flow_keys_equal(&entry->key, key))
 			continue;
+		if (entry->pid <= 0) {
+			pid = 0;
+			break;
+		}
 		if (!flow_pid_is_alive(entry->pid)) {
 			hash_del(&entry->hnode);
 			kfree(entry);
@@ -257,21 +261,39 @@ bool flow_cache_should_scan(const struct flow_key *key)
 void flow_cache_set_scanned(const struct flow_key *key)
 {
 	struct flow_cache_entry *entry;
+	struct flow_key canonical;
 	u32 hash;
 
 	if (!key)
 		return;
 
-	hash = flow_hash_key(key);
+	canonical = *key;
+	make_canonical(&canonical);
+	hash = flow_hash_key(&canonical);
 	spin_lock_bh(&flow_cache_lock);
 	hash_for_each_possible(flow_hash, entry, hnode, hash) {
-		if (flow_keys_equal(&entry->key, key)) {
+		if (flow_keys_equal(&entry->key, &canonical)) {
 			entry->should_scan = false;
 			entry->accessed = jiffies;
 			spin_unlock_bh(&flow_cache_lock);
 			return;
 		}
 	}
+
+	if (flow_cache_entries >= MAX_FLOW_CACHE_ENTRIES)
+		flow_cache_evict_lru_locked();
+
+	entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
+	if (!entry) {
+		spin_unlock_bh(&flow_cache_lock);
+		pr_err("kta: flow_cache: scan marker allocation failed\n");
+		return;
+	}
+	entry->key = canonical;
+	entry->pid = 0;
+	entry->should_scan = false;
+	entry->accessed = jiffies;
+	hash_add(flow_hash, &entry->hnode, hash);
+	flow_cache_entries++;
 	spin_unlock_bh(&flow_cache_lock);
 }
-

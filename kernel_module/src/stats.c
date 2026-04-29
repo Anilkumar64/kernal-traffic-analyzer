@@ -162,24 +162,24 @@ static struct traffic_entry *traffic_find_locked(const struct flow_key *key)
 static void traffic_evict_locked(void)
 {
 	struct traffic_entry *entry;
-	struct traffic_entry *candidate = NULL;
+	struct traffic_entry *closed = NULL;
+	struct traffic_entry *udp = NULL;
+	struct traffic_entry *oldest = NULL;
+	struct traffic_entry *candidate;
 
 	list_for_each_entry(entry, &traffic_list, list) {
 		if (entry->state == KTA_STATE_CLOSED) {
-			candidate = entry;
+			closed = entry;
 			break;
 		}
-		if (!candidate || ktime_before(entry->last_seen, candidate->last_seen))
-			candidate = entry;
 	}
-	if (!candidate) {
-		list_for_each_entry(entry, &traffic_list, list) {
-			if (entry->state == KTA_STATE_UDP) {
-				candidate = entry;
-				break;
-			}
-		}
+	list_for_each_entry(entry, &traffic_list, list) {
+		if (!udp && entry->state == KTA_STATE_UDP)
+			udp = entry;
+		if (!oldest || ktime_before(entry->last_seen, oldest->last_seen))
+			oldest = entry;
 	}
+	candidate = closed ? closed : (udp ? udp : oldest);
 	if (candidate) {
 		list_del(&candidate->list);
 		kfree(candidate);
