@@ -1,0 +1,17 @@
+[Unit]
+Description=Kernel Traffic Analyzer Route Daemon
+After=network.target
+# Soft dependency on the kernel module service when present.
+Requires=kta-module.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/kta/ta_route_daemon.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+User=root
+
+[Install]
+WantedBy=multi-user.target

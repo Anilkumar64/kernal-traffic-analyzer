@@ -1,566 +1,326 @@
+/**
+ * @file PacketBackend.cpp
+ * @brief AF_PACKET capture backend implementation.
+ * @details Configures a TPACKET_V3 RX ring, consumes ready blocks on a worker
+ * thread, decodes Ethernet/IP/TCP/UDP frames, and feeds normalized flow records.
+ * @author Kernel Traffic Analyzer Project
+ * @license MIT
+ */
 #include "PacketBackend.h"
 
 #include <arpa/inet.h>
 #include <linux/if_ether.h>
-#include <linux/if_packet.h>
 #include <linux/if_vlan.h>
+#include <linux/ip.h>
+#include <linux/ipv6.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
 #include <net/if.h>
-#include <netinet/ip.h>
-#include <netinet/ip6.h>
-#include <netinet/tcp.h>
-#include <netinet/udp.h>
 #include <poll.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <iostream>
-#include <sstream>
+#include <utility>
 
-namespace kta {
 namespace {
 
-constexpr std::uint16_t etherTypeIp = 0x0800;
-constexpr std::uint16_t etherTypeIpv6 = 0x86dd;
-constexpr std::uint32_t vlanHeaderLength = 4;
-constexpr std::uint8_t tcpFin = 0x01;
-constexpr std::uint8_t tcpSyn = 0x02;
-constexpr std::uint8_t tcpRst = 0x04;
-constexpr std::uint8_t tcpAck = 0x10;
+constexpr uint16_t ETHERTYPE_IPV4 = 0x0800;
+constexpr uint16_t ETHERTYPE_IPV6 = 0x86DD;
+constexpr uint16_t ETHERTYPE_VLAN = 0x8100;
+constexpr uint32_t ETHERNET_HEADER_LEN = 14;
+constexpr uint32_t VLAN_TAG_LEN = 4;
+constexpr uint8_t IPV6_EXT_HOP = 0;
+constexpr uint8_t IPV6_EXT_ROUTING = 43;
+constexpr uint8_t IPV6_EXT_FRAGMENT = 44;
+constexpr uint8_t IPV6_EXT_AH = 51;
+constexpr uint8_t IPV6_EXT_DEST = 60;
 
-bool seqBefore(std::uint32_t a, std::uint32_t b)
+uint16_t read_be16(const void* ptr)
 {
-    return static_cast<std::int32_t>(a - b) < 0;
+    uint16_t value{};
+    std::memcpy(&value, ptr, sizeof(value));
+    return ntohs(value);
 }
 
-std::string jsonEscape(const std::string &input)
+uint32_t ipv6_tail32(const in6_addr& addr)
 {
-    std::string out;
-    out.reserve(input.size() + 8);
-    for (char c : input) {
-        switch (c) {
-        case '\\':
-            out += "\\\\";
-            break;
-        case '"':
-            out += "\\\"";
-            break;
-        case '\n':
-            out += "\\n";
-            break;
-        default:
-            out += c;
-            break;
-        }
-    }
-    return out;
+    uint32_t value{};
+    std::memcpy(&value, &addr.s6_addr[12], sizeof(value));
+    return value;
 }
 
-std::uint16_t readBe16(const void *p)
+bool is_ipv6_extension(uint8_t next_header)
 {
-    std::uint16_t v;
-    std::memcpy(&v, p, sizeof(v));
-    return ntohs(v);
-}
-
-std::uint32_t readBe32(const void *p)
-{
-    std::uint32_t v;
-    std::memcpy(&v, p, sizeof(v));
-    return ntohl(v);
+    return next_header == IPV6_EXT_HOP || next_header == IPV6_EXT_ROUTING ||
+           next_header == IPV6_EXT_FRAGMENT || next_header == IPV6_EXT_AH ||
+           next_header == IPV6_EXT_DEST;
 }
 
 } // namespace
 
-bool FlowKey::operator==(const FlowKey &other) const
-{
-    return family == other.family &&
-           protocol == other.protocol &&
-           src == other.src &&
-           dst == other.dst &&
-           srcPort == other.srcPort &&
-           dstPort == other.dstPort;
-}
-
-std::size_t FlowKeyHash::operator()(const FlowKey &key) const
-{
-    std::uint64_t h = 1469598103934665603ULL;
-    auto mix = [&h](std::uint8_t b) {
-        h ^= b;
-        h *= 1099511628211ULL;
-    };
-
-    mix(key.family);
-    mix(key.protocol);
-    for (auto b : key.src)
-        mix(b);
-    for (auto b : key.dst)
-        mix(b);
-    mix(static_cast<std::uint8_t>(key.srcPort >> 8));
-    mix(static_cast<std::uint8_t>(key.srcPort));
-    mix(static_cast<std::uint8_t>(key.dstPort >> 8));
-    mix(static_cast<std::uint8_t>(key.dstPort));
-    return static_cast<std::size_t>(h);
-}
-
-PacketBackend::PacketBackend(BackendOptions options)
-    : options_(std::move(options)),
-      lastSnapshot_(std::chrono::steady_clock::now())
+PacketBackend::PacketBackend(std::string iface, FlowTracker& tracker)
+    : iface_(std::move(iface)),
+      tracker_(tracker)
 {
 }
 
-int PacketBackend::selfTest()
+PacketBackend::~PacketBackend()
 {
-    PacketBackend backend({});
-
-    std::vector<std::uint8_t> tcp(sizeof(struct ethhdr) + sizeof(struct iphdr) +
-                                  sizeof(struct tcphdr) + 18);
-    auto *eth = reinterpret_cast<struct ethhdr *>(tcp.data());
-    eth->h_proto = htons(ETH_P_IP);
-
-    auto *ip = reinterpret_cast<struct iphdr *>(tcp.data() + sizeof(struct ethhdr));
-    ip->version = 4;
-    ip->ihl = 5;
-    ip->protocol = IPPROTO_TCP;
-    ip->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + 18);
-    inet_pton(AF_INET, "10.0.0.10", &ip->saddr);
-    inet_pton(AF_INET, "93.184.216.34", &ip->daddr);
-
-    auto *th = reinterpret_cast<struct tcphdr *>(tcp.data() + sizeof(struct ethhdr) + sizeof(struct iphdr));
-    th->source = htons(51515);
-    th->dest = htons(80);
-    th->seq = htonl(1000);
-    th->doff = 5;
-    std::memcpy(tcp.data() + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr),
-                "GET / HTTP/1.1\r\n\r\n", 18);
-
-    PacketMeta tcpMeta;
-    if (!backend.parsePacket(tcp.data(), tcp.size(), tcpMeta) || tcpMeta.dpiHint != DpiHint::Http) {
-        std::cerr << "self-test failed: TCP/HTTP parser path\n";
-        return 1;
-    }
-    backend.updateFlow(tcpMeta, monotonicNs());
-    backend.updateStream(tcpMeta);
-
-    std::vector<std::uint8_t> udp(sizeof(struct ethhdr) + sizeof(struct iphdr) +
-                                  sizeof(struct udphdr) + 12);
-    eth = reinterpret_cast<struct ethhdr *>(udp.data());
-    eth->h_proto = htons(ETH_P_IP);
-
-    ip = reinterpret_cast<struct iphdr *>(udp.data() + sizeof(struct ethhdr));
-    ip->version = 4;
-    ip->ihl = 5;
-    ip->protocol = IPPROTO_UDP;
-    ip->tot_len = htons(sizeof(struct iphdr) + sizeof(struct udphdr) + 12);
-    inet_pton(AF_INET, "1.1.1.1", &ip->saddr);
-    inet_pton(AF_INET, "10.0.0.10", &ip->daddr);
-
-    auto *uh = reinterpret_cast<struct udphdr *>(udp.data() + sizeof(struct ethhdr) + sizeof(struct iphdr));
-    uh->source = htons(53);
-    uh->dest = htons(53000);
-    uh->len = htons(sizeof(struct udphdr) + 12);
-
-    PacketMeta udpMeta;
-    if (!backend.parsePacket(udp.data(), udp.size(), udpMeta) || udpMeta.dpiHint != DpiHint::Dns) {
-        std::cerr << "self-test failed: UDP/DNS parser path\n";
-        return 1;
-    }
-    backend.updateFlow(udpMeta, monotonicNs());
-
-    if (backend.flows_.size() != 2) {
-        std::cerr << "self-test failed: expected two tracked flows\n";
-        return 1;
-    }
-
-    std::cout << "kta_packet_backend self-test passed\n";
-    return 0;
-}
-
-int PacketBackend::run()
-{
-    if (!openSocket() || !configureRing() || !bindInterface()) {
-        closeSocket();
-        return 1;
-    }
-
-    std::cerr << "kta_packet_backend capturing on " << options_.interfaceName
-              << " with AF_PACKET TPACKET_V3\n";
-
-    while (true) {
-        pollfd pfd{};
-        pfd.fd = socketFd_;
-        pfd.events = POLLIN;
-        poll(&pfd, 1, 100);
-
-        consumeReadyBlocks();
-
-        const auto now = std::chrono::steady_clock::now();
-        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSnapshot_);
-        if (elapsed.count() >= options_.snapshotIntervalMs) {
-            printSnapshot();
-            lastSnapshot_ = now;
+    stop();
+    if (ring_ != nullptr) {
+        if (munmap(ring_, ring_size_) != 0) {
+            std::cerr << "munmap packet ring failed: " << std::strerror(errno) << "\n";
         }
+        ring_ = nullptr;
     }
-
-    closeSocket();
-    return 0;
+    if (sock_fd_ >= 0) {
+        if (close(sock_fd_) != 0) {
+            std::cerr << "close packet socket failed: " << std::strerror(errno) << "\n";
+        }
+        sock_fd_ = -1;
+    }
 }
 
-bool PacketBackend::openSocket()
+bool PacketBackend::open()
 {
-    socketFd_ = ::socket(AF_PACKET, SOCK_RAW | SOCK_NONBLOCK, htons(ETH_P_ALL));
-    if (socketFd_ < 0) {
-        std::cerr << "AF_PACKET socket failed: " << std::strerror(errno) << "\n";
+    sock_fd_ = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+    if (sock_fd_ < 0) {
+        std::cerr << "socket(AF_PACKET) failed: " << std::strerror(errno) << "\n";
         return false;
     }
-    return true;
-}
 
-bool PacketBackend::configureRing()
-{
     int version = TPACKET_V3;
-    if (setsockopt(socketFd_, SOL_PACKET, PACKET_VERSION, &version, sizeof(version)) < 0) {
-        std::cerr << "PACKET_VERSION failed: " << std::strerror(errno) << "\n";
+    if (setsockopt(sock_fd_, SOL_PACKET, PACKET_VERSION, &version, sizeof(version)) != 0) {
+        std::cerr << "setsockopt(PACKET_VERSION) failed: " << std::strerror(errno) << "\n";
         return false;
     }
 
     tpacket_req3 req{};
-    req.tp_block_size = blockSize_;
-    req.tp_frame_size = 2048;
-    req.tp_block_nr = blockCount_;
-    req.tp_frame_nr = (req.tp_block_size * req.tp_block_nr) / req.tp_frame_size;
-    req.tp_retire_blk_tov = 64;
+    req.tp_block_size = BLOCK_SIZE;
+    req.tp_block_nr = BLOCK_NR;
+    req.tp_frame_size = FRAME_SIZE;
+    req.tp_frame_nr = FRAME_NR;
+    req.tp_retire_blk_tov = 60;
+    req.tp_feature_req_word = TP_FT_REQ_FILL_RXHASH;
 
-    if (setsockopt(socketFd_, SOL_PACKET, PACKET_RX_RING, &req, sizeof(req)) < 0) {
-        std::cerr << "PACKET_RX_RING failed: " << std::strerror(errno) << "\n";
+    if (setsockopt(sock_fd_, SOL_PACKET, PACKET_RX_RING, &req, sizeof(req)) != 0) {
+        std::cerr << "setsockopt(PACKET_RX_RING) failed: " << std::strerror(errno) << "\n";
         return false;
     }
 
-    ringSize_ = static_cast<std::size_t>(req.tp_block_size) * req.tp_block_nr;
-    ring_ = mmap(nullptr, ringSize_, PROT_READ | PROT_WRITE, MAP_SHARED, socketFd_, 0);
+    ring_size_ = static_cast<size_t>(BLOCK_SIZE) * BLOCK_NR;
+    ring_ = mmap(nullptr, ring_size_, PROT_READ | PROT_WRITE,
+                 MAP_SHARED | MAP_LOCKED, sock_fd_, 0);
     if (ring_ == MAP_FAILED) {
         ring_ = nullptr;
         std::cerr << "mmap packet ring failed: " << std::strerror(errno) << "\n";
         return false;
     }
-    return true;
-}
 
-bool PacketBackend::bindInterface()
-{
     sockaddr_ll addr{};
     addr.sll_family = AF_PACKET;
     addr.sll_protocol = htons(ETH_P_ALL);
-    if (options_.interfaceName != "any") {
-        addr.sll_ifindex = if_nametoindex(options_.interfaceName.c_str());
-        if (addr.sll_ifindex == 0) {
-            std::cerr << "unknown interface: " << options_.interfaceName << "\n";
-            return false;
-        }
+    addr.sll_ifindex = static_cast<int>(if_nametoindex(iface_.c_str()));
+    if (addr.sll_ifindex == 0) {
+        std::cerr << "if_nametoindex(" << iface_ << ") failed: " << std::strerror(errno) << "\n";
+        return false;
     }
 
-    if (bind(socketFd_, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
-        std::cerr << "bind AF_PACKET failed: " << std::strerror(errno) << "\n";
+    if (bind(sock_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+        std::cerr << "bind(AF_PACKET) failed: " << std::strerror(errno) << "\n";
         return false;
     }
 
     return true;
 }
 
-void PacketBackend::closeSocket()
+void PacketBackend::start()
 {
-    if (ring_) {
-        munmap(ring_, ringSize_);
-        ring_ = nullptr;
-    }
-    if (socketFd_ >= 0) {
-        close(socketFd_);
-        socketFd_ = -1;
+    bool expected = false;
+    if (running_.compare_exchange_strong(expected, true)) {
+        capture_thread_ = std::thread(&PacketBackend::run, this);
     }
 }
 
-void PacketBackend::consumeReadyBlocks()
+void PacketBackend::stop()
 {
-    if (!ring_)
-        return;
+    running_ = false;
+    if (capture_thread_.joinable()) {
+        capture_thread_.join();
+    }
+}
 
-    while (true) {
-        auto *block = reinterpret_cast<tpacket_block_desc *>(
-            static_cast<std::uint8_t *>(ring_) + static_cast<std::size_t>(currentBlock_) * blockSize_);
+void PacketBackend::run()
+{
+    pollfd pfd{};
+    pfd.fd = sock_fd_;
+    pfd.events = POLLIN;
 
-        if ((block->hdr.bh1.block_status & TP_STATUS_USER) == 0)
+    while (running_) {
+        const int rc = poll(&pfd, 1, 100);
+        if (rc < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            std::cerr << "poll packet ring failed: " << std::strerror(errno) << "\n";
             break;
-
-        std::uint32_t offset = block->hdr.bh1.offset_to_first_pkt;
-        for (std::uint32_t i = 0; i < block->hdr.bh1.num_pkts; ++i) {
-            auto *hdr = reinterpret_cast<tpacket3_hdr *>(reinterpret_cast<std::uint8_t *>(block) + offset);
-            const auto *packet = reinterpret_cast<const std::uint8_t *>(hdr) + hdr->tp_mac;
-            consumePacket(packet, hdr->tp_snaplen);
-            offset += hdr->tp_next_offset;
         }
 
-        block->hdr.bh1.block_status = TP_STATUS_KERNEL;
-        currentBlock_ = (currentBlock_ + 1) % blockCount_;
+        for (unsigned i = 0; i < BLOCK_NR; ++i) {
+            auto* block = reinterpret_cast<tpacket_block_desc*>(
+                static_cast<uint8_t*>(ring_) + (static_cast<size_t>(i) * BLOCK_SIZE));
+            if ((block->hdr.bh1.block_status & TP_STATUS_USER) != 0U) {
+                process_block(block);
+                block->hdr.bh1.block_status = TP_STATUS_KERNEL;
+            }
+        }
     }
 }
 
-void PacketBackend::consumePacket(const std::uint8_t *data, std::uint32_t length)
+void PacketBackend::process_block(tpacket_block_desc* block)
 {
-    PacketMeta meta;
-    if (!parsePacket(data, length, meta))
+    uint32_t offset = block->hdr.bh1.offset_to_first_pkt;
+    for (uint32_t i = 0; i < block->hdr.bh1.num_pkts; ++i) {
+        auto* hdr = reinterpret_cast<tpacket3_hdr*>(static_cast<uint8_t*>(static_cast<void*>(block)) + offset);
+        const auto* addr = reinterpret_cast<const sockaddr_ll*>(
+            reinterpret_cast<const uint8_t*>(hdr) + TPACKET_ALIGN(sizeof(tpacket3_hdr)));
+        const auto* data = reinterpret_cast<const uint8_t*>(hdr) + hdr->tp_mac;
+        process_frame(data, hdr->tp_snaplen, addr);
+        offset += hdr->tp_next_offset;
+        if (hdr->tp_next_offset == 0) {
+            break;
+        }
+    }
+}
+
+void PacketBackend::process_frame(const uint8_t* frame_data, uint32_t frame_len,
+                                  const sockaddr_ll* addr)
+{
+    if (frame_data == nullptr || frame_len == 0) {
         return;
-
-    const auto now = monotonicNs();
-    updateFlow(meta, now);
-    updateStream(meta);
-}
-
-bool PacketBackend::parsePacket(const std::uint8_t *data, std::uint32_t length, PacketMeta &meta) const
-{
-    if (length < sizeof(ethhdr))
-        return false;
-
-    std::uint32_t offset = sizeof(ethhdr);
-    std::uint16_t etherType = readBe16(data + 12);
-
-    for (int i = 0; i < 2 && (etherType == ETH_P_8021Q || etherType == ETH_P_8021AD); ++i) {
-        if (length < offset + vlanHeaderLength)
-            return false;
-        etherType = readBe16(data + offset + 2);
-        offset += vlanHeaderLength;
     }
 
-    meta.packetLength = length;
+    ++total_packets_;
+    total_bytes_ += frame_len;
 
-    if (etherType == etherTypeIp) {
-        if (length < offset + sizeof(iphdr))
-            return false;
-        const auto *ip = reinterpret_cast<const iphdr *>(data + offset);
-        const std::uint8_t ihl = ip->ihl * 4;
-        if (ihl < sizeof(iphdr) || length < offset + ihl)
-            return false;
-        if (ip->protocol != IPPROTO_TCP && ip->protocol != IPPROTO_UDP)
-            return false;
+    bool inbound = true;
+    if (addr != nullptr && addr->sll_pkttype == PACKET_OUTGOING) {
+        inbound = false;
+    }
+    dissect(frame_data, frame_len, inbound);
+}
 
-        meta.key.family = AF_INET;
-        meta.key.protocol = ip->protocol;
-        std::memcpy(meta.key.src.data() + 12, &ip->saddr, 4);
-        std::memcpy(meta.key.dst.data() + 12, &ip->daddr, 4);
+void PacketBackend::dissect(const uint8_t* data, uint32_t len, bool is_inbound)
+{
+    (void)dpi_engine_;
+    if (data == nullptr || len < ETHERNET_HEADER_LEN) {
+        return;
+    }
+
+    uint32_t offset = ETHERNET_HEADER_LEN;
+    uint16_t ethertype = read_be16(data + 12);
+    if (ethertype == ETHERTYPE_VLAN) {
+        if (len < ETHERNET_HEADER_LEN + VLAN_TAG_LEN) {
+            return;
+        }
+        ethertype = read_be16(data + 16);
+        offset += VLAN_TAG_LEN;
+    }
+
+    uint32_t src_ip = 0;
+    uint32_t dst_ip = 0;
+    uint8_t protocol = 0;
+
+    if (ethertype == ETHERTYPE_IPV4) {
+        if (len < offset + sizeof(iphdr)) {
+            return;
+        }
+        const auto* ip = reinterpret_cast<const iphdr*>(data + offset);
+        const uint32_t ihl = static_cast<uint32_t>(ip->ihl) * 4U;
+        if (ip->version != 4 || ihl < sizeof(iphdr) || len < offset + ihl) {
+            return;
+        }
+        src_ip = ip->saddr;
+        dst_ip = ip->daddr;
+        protocol = ip->protocol;
         offset += ihl;
-    } else if (etherType == etherTypeIpv6) {
-        if (length < offset + sizeof(ip6_hdr))
-            return false;
-        const auto *ip6 = reinterpret_cast<const ip6_hdr *>(data + offset);
-        if (ip6->ip6_nxt != IPPROTO_TCP && ip6->ip6_nxt != IPPROTO_UDP)
-            return false;
-
-        meta.key.family = AF_INET6;
-        meta.key.protocol = ip6->ip6_nxt;
-        std::memcpy(meta.key.src.data(), &ip6->ip6_src, 16);
-        std::memcpy(meta.key.dst.data(), &ip6->ip6_dst, 16);
-        offset += sizeof(ip6_hdr);
-    } else {
-        return false;
-    }
-
-    if (meta.key.protocol == IPPROTO_TCP) {
-        if (length < offset + sizeof(tcphdr))
-            return false;
-        const auto *tcp = reinterpret_cast<const tcphdr *>(data + offset);
-        const std::uint8_t tcpHeaderLength = tcp->doff * 4;
-        if (tcpHeaderLength < sizeof(tcphdr) || length < offset + tcpHeaderLength)
-            return false;
-
-        meta.key.srcPort = ntohs(tcp->source);
-        meta.key.dstPort = ntohs(tcp->dest);
-        meta.tcpSeq = ntohl(tcp->seq);
-        meta.tcpAck = ntohl(tcp->ack_seq);
-        meta.tcpFlags = data[offset + 13];
-        meta.payloadOffset = static_cast<std::uint16_t>(offset + tcpHeaderLength);
-    } else {
-        if (length < offset + sizeof(udphdr))
-            return false;
-        const auto *udp = reinterpret_cast<const udphdr *>(data + offset);
-        meta.key.srcPort = ntohs(udp->source);
-        meta.key.dstPort = ntohs(udp->dest);
-        meta.payloadOffset = static_cast<std::uint16_t>(offset + sizeof(udphdr));
-    }
-
-    if (meta.payloadOffset > length)
-        return false;
-    meta.payloadLength = static_cast<std::uint16_t>(std::min<std::uint32_t>(length - meta.payloadOffset, 65535));
-    meta.dpiHint = scanPayload(data + meta.payloadOffset, meta.payloadLength,
-                               meta.key.protocol, meta.key.srcPort, meta.key.dstPort);
-    return true;
-}
-
-void PacketBackend::updateFlow(const PacketMeta &meta, std::uint64_t nowNs)
-{
-    auto &flow = flows_[meta.key];
-    if (flow.packets == 0)
-        flow.firstSeenNs = nowNs;
-
-    flow.packets++;
-    flow.bytes += meta.packetLength;
-    flow.lastSeenNs = nowNs;
-
-    switch (meta.dpiHint) {
-    case DpiHint::Http:
-        flow.httpPackets++;
-        break;
-    case DpiHint::TlsClientHello:
-        flow.tlsPackets++;
-        break;
-    case DpiHint::Dns:
-        flow.dnsPackets++;
-        break;
-    case DpiHint::None:
-        break;
-    }
-}
-
-void PacketBackend::updateStream(const PacketMeta &meta)
-{
-    if (meta.key.protocol != IPPROTO_TCP || meta.payloadLength == 0)
-        return;
-
-    auto &stream = streams_[meta.key];
-    auto &side = stream.client;
-    auto &flow = flows_[meta.key];
-
-    if ((meta.tcpFlags & (tcpSyn | tcpFin | tcpRst)) != 0) {
-        side.initialized = false;
-        side.nextSeq = 0;
-    }
-
-    if (!side.initialized) {
-        side.initialized = true;
-        side.nextSeq = meta.tcpSeq + meta.payloadLength;
-        return;
-    }
-
-    if (meta.tcpSeq == side.nextSeq) {
-        side.nextSeq += meta.payloadLength;
-    } else if (seqBefore(meta.tcpSeq, side.nextSeq)) {
-        flow.retransmits++;
-    } else {
-        flow.outOfOrder++;
-        side.nextSeq = meta.tcpSeq + meta.payloadLength;
-    }
-}
-
-DpiHint PacketBackend::scanPayload(const std::uint8_t *payload, std::uint16_t length,
-                                   std::uint8_t protocol, std::uint16_t srcPort,
-                                   std::uint16_t dstPort)
-{
-    if (protocol == IPPROTO_UDP && (srcPort == 53 || dstPort == 53))
-        return DpiHint::Dns;
-
-    if (length >= 4) {
-        if (std::memcmp(payload, "GET ", 4) == 0 ||
-            std::memcmp(payload, "POST", 4) == 0 ||
-            std::memcmp(payload, "HEAD", 4) == 0 ||
-            std::memcmp(payload, "PUT ", 4) == 0) {
-            return DpiHint::Http;
+    } else if (ethertype == ETHERTYPE_IPV6) {
+        if (len < offset + sizeof(ipv6hdr)) {
+            return;
         }
-    }
+        const auto* ip6 = reinterpret_cast<const ipv6hdr*>(data + offset);
+        src_ip = ipv6_tail32(ip6->saddr);
+        dst_ip = ipv6_tail32(ip6->daddr);
+        protocol = ip6->nexthdr;
+        offset += sizeof(ipv6hdr);
 
-    if (length >= 6 && payload[0] == 0x16 && payload[5] == 0x01)
-        return DpiHint::TlsClientHello;
+        for (int i = 0; i < 8 && is_ipv6_extension(protocol); ++i) {
+            if (protocol == IPV6_EXT_FRAGMENT) {
+                if (len < offset + 8) {
+                    return;
+                }
+                protocol = data[offset];
+                offset += 8;
+                continue;
+            }
 
-    return DpiHint::None;
-}
-
-std::uint64_t PacketBackend::monotonicNs()
-{
-    const auto now = std::chrono::steady_clock::now().time_since_epoch();
-    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
-}
-
-std::string PacketBackend::flowToString(const FlowKey &key)
-{
-    char src[INET6_ADDRSTRLEN] = {};
-    char dst[INET6_ADDRSTRLEN] = {};
-
-    if (key.family == AF_INET) {
-        inet_ntop(AF_INET, key.src.data() + 12, src, sizeof(src));
-        inet_ntop(AF_INET, key.dst.data() + 12, dst, sizeof(dst));
+            if (len < offset + 2) {
+                return;
+            }
+            const uint8_t next = data[offset];
+            uint32_t ext_len = 0;
+            if (protocol == IPV6_EXT_AH) {
+                ext_len = static_cast<uint32_t>(data[offset + 1] + 2U) * 4U;
+            } else {
+                ext_len = static_cast<uint32_t>(data[offset + 1] + 1U) * 8U;
+            }
+            if (ext_len == 0 || len < offset + ext_len) {
+                return;
+            }
+            protocol = next;
+            offset += ext_len;
+        }
     } else {
-        inet_ntop(AF_INET6, key.src.data(), src, sizeof(src));
-        inet_ntop(AF_INET6, key.dst.data(), dst, sizeof(dst));
+        return;
     }
 
-    std::ostringstream out;
-    out << src << ':' << key.srcPort << " -> " << dst << ':' << key.dstPort
-        << '/' << (key.protocol == IPPROTO_TCP ? "TCP" : "UDP");
-    return out.str();
+    uint16_t src_port = 0;
+    uint16_t dst_port = 0;
+    uint8_t tcp_flags = 0;
+    const uint8_t* payload = nullptr;
+    size_t payload_len = 0;
+
+    if (protocol == IPPROTO_TCP) {
+        if (len < offset + sizeof(tcphdr)) {
+            return;
+        }
+        src_port = read_be16(data + offset);
+        dst_port = read_be16(data + offset + 2);
+        const uint32_t tcp_hlen = static_cast<uint32_t>(data[offset + 12] >> 4U) * 4U;
+        if (tcp_hlen < sizeof(tcphdr) || len < offset + tcp_hlen) {
+            return;
+        }
+        tcp_flags = data[offset + 13];
+        payload = data + offset + tcp_hlen;
+        payload_len = len - offset - tcp_hlen;
+    } else if (protocol == IPPROTO_UDP) {
+        if (len < offset + sizeof(udphdr)) {
+            return;
+        }
+        src_port = read_be16(data + offset);
+        dst_port = read_be16(data + offset + 2);
+        payload = data + offset + sizeof(udphdr);
+        payload_len = len - offset - sizeof(udphdr);
+    } else {
+        return;
+    }
+
+    const bool port_inbound = dst_port < 1024 ? true : is_inbound;
+    FlowKey key{src_ip, dst_ip, src_port, dst_port, protocol};
+    const DpiHint hint = DpiEngine::inspect(payload, payload_len, dst_port, src_port);
+    tracker_.update(key, len, port_inbound, tcp_flags, hint);
 }
-
-std::string PacketBackend::dpiHintToString(DpiHint hint)
-{
-    switch (hint) {
-    case DpiHint::Http:
-        return "HTTP";
-    case DpiHint::TlsClientHello:
-        return "TLS_CLIENT_HELLO";
-    case DpiHint::Dns:
-        return "DNS";
-    case DpiHint::None:
-        return "NONE";
-    }
-    return "NONE";
-}
-
-void PacketBackend::printSnapshot()
-{
-    std::vector<std::pair<FlowKey, FlowStats>> ordered;
-    ordered.reserve(flows_.size());
-    for (const auto &entry : flows_)
-        ordered.push_back(entry);
-
-    std::sort(ordered.begin(), ordered.end(), [](const auto &a, const auto &b) {
-        return a.second.bytes > b.second.bytes;
-    });
-
-    const auto limit = std::min<std::size_t>(ordered.size(), std::max(0, options_.maxTopFlows));
-    std::uint64_t totalBytes = 0;
-    std::uint64_t totalPackets = 0;
-    for (const auto &entry : flows_) {
-        totalBytes += entry.second.bytes;
-        totalPackets += entry.second.packets;
-    }
-
-    std::cout << "{\"type\":\"kta_packet_snapshot\","
-              << "\"flows\":" << flows_.size() << ','
-              << "\"packets\":" << totalPackets << ','
-              << "\"bytes\":" << totalBytes << ','
-              << "\"top\":[";
-
-    for (std::size_t i = 0; i < limit; ++i) {
-        const auto &[key, stats] = ordered[i];
-        if (i)
-            std::cout << ',';
-
-        DpiHint hint = DpiHint::None;
-        if (stats.httpPackets)
-            hint = DpiHint::Http;
-        else if (stats.tlsPackets)
-            hint = DpiHint::TlsClientHello;
-        else if (stats.dnsPackets)
-            hint = DpiHint::Dns;
-
-        std::cout << "{\"flow\":\"" << jsonEscape(flowToString(key)) << "\","
-                  << "\"packets\":" << stats.packets << ','
-                  << "\"bytes\":" << stats.bytes << ','
-                  << "\"dpi\":\"" << dpiHintToString(hint) << "\","
-                  << "\"retransmits\":" << stats.retransmits << ','
-                  << "\"out_of_order\":" << stats.outOfOrder << '}';
-    }
-
-    std::cout << "]}" << std::endl;
-}
-
-} // namespace kta
