@@ -20,8 +20,8 @@ DnsLeakTab::DnsLeakTab(QWidget *parent) : QWidget(parent)
     auto *tl = new QHBoxLayout(topBar);
     tl->setContentsMargins(20,0,20,0);
     auto *ttl = new QLabel("DNS Leak Detector", topBar);
-    ttl->setStyleSheet("color:#cccccc;font-size:17px;font-weight:600;"
-                       "font-family:'Ubuntu Mono';");
+    ttl->setStyleSheet("color:#ffffff;font-size:17px;font-weight:600;"
+                       "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
 
     auto *clearBtn = new QPushButton("Clear Events", topBar);
     clearBtn->setFixedWidth(120);
@@ -43,7 +43,7 @@ DnsLeakTab::DnsLeakTab(QWidget *parent) : QWidget(parent)
     m_statusBanner->setAlignment(Qt::AlignCenter);
     m_statusBanner->setStyleSheet(
         "background:#1a2e2b;color:#4ec9b0;font-size:16px;font-weight:600;"
-        "font-family:'Ubuntu Mono';border-bottom:1px solid #555555;");
+        "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;border-bottom:1px solid #333333;");
     outer->addWidget(m_statusBanner);
 
     // Authorized resolvers
@@ -54,10 +54,10 @@ DnsLeakTab::DnsLeakTab(QWidget *parent) : QWidget(parent)
     rl->setContentsMargins(20,0,20,0);
     auto *rlbl = new QLabel("Authorized resolvers:", resolverWidget);
     rlbl->setStyleSheet("color:#8a8a8a;font-size:11px;font-weight:700;"
-                        "font-family:'Ubuntu Mono';letter-spacing:1px;");
+                        "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;letter-spacing:1px;");
     m_resolverList = new QLabel("loading...", resolverWidget);
     m_resolverList->setStyleSheet("color:#10b981;font-size:14px;"
-                                   "font-family:'Ubuntu Mono';");
+                                   "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     rl->addWidget(rlbl); rl->addWidget(m_resolverList); rl->addStretch();
     outer->addWidget(resolverWidget);
 
@@ -112,18 +112,18 @@ void DnsLeakTab::rebuild()
             QString("⚠  %1 DNS leak(s) detected").arg(critCount));
         m_statusBanner->setStyleSheet(
             "background:#2e1515;color:#ef4444;font-size:16px;font-weight:600;"
-            "font-family:'Ubuntu Mono';border-bottom:1px solid #555555;");
+            "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;border-bottom:1px solid #333333;");
     } else if (!events.isEmpty()) {
         m_statusBanner->setText(
             QString("⚠  %1 suspicious DNS event(s)").arg(events.size()));
         m_statusBanner->setStyleSheet(
             "background:#2e1f15;color:#ce9178;font-size:16px;font-weight:600;"
-            "font-family:'Ubuntu Mono';border-bottom:1px solid #555555;");
+            "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;border-bottom:1px solid #333333;");
     } else {
         m_statusBanner->setText("✓  No DNS leaks detected");
         m_statusBanner->setStyleSheet(
             "background:#1a2e2b;color:#4ec9b0;font-size:16px;font-weight:600;"
-            "font-family:'Ubuntu Mono';border-bottom:1px solid #555555;");
+            "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;border-bottom:1px solid #333333;");
     }
 
     // Resolvers
