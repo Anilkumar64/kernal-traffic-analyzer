@@ -17,9 +17,14 @@ traffic_analyzer-objs := \
     src/route_store.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
+BUILD_M := $(if $(findstring $(space),$(CURDIR)),/tmp/kta_kernel_module_$(shell id -u),$(CURDIR))
+
+space := $(empty) $(empty)
 
 all:
-	$(MAKE) -C $(KDIR) M="$(CURDIR)" modules
+	@if [ "$(BUILD_M)" != "$(CURDIR)" ]; then ln -sfn "$(CURDIR)" "$(BUILD_M)"; fi
+	$(MAKE) -C $(KDIR) M="$(BUILD_M)" modules
 
 clean:
-	$(MAKE) -C $(KDIR) M="$(CURDIR)" clean
+	@if [ "$(BUILD_M)" != "$(CURDIR)" ]; then ln -sfn "$(CURDIR)" "$(BUILD_M)"; fi
+	$(MAKE) -C $(KDIR) M="$(BUILD_M)" clean
