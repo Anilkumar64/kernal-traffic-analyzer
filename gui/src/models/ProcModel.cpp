@@ -191,7 +191,7 @@ void ProcModel::rebuildRows()
         filtered_indices_.append(i);
         rows_.append(RowRef{i, -1});
         if (expanded_pids_.contains(rec.pid)) {
-            const int childCount = std::min(5, topRemotesForPid(rec.pid).size());
+            const int childCount = std::min(5, static_cast<int>(topRemotesForPid(rec.pid).size()));
             for (int child = 0; child < childCount; ++child) {
                 rows_.append(RowRef{i, child});
             }
