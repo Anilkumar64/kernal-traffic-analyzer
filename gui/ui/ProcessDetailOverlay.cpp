@@ -66,7 +66,7 @@ void ProcBwGraph::paintEvent(QPaintEvent *)
     }
 
     if (m_out.isEmpty()) {
-        QFont f("Ubuntu Mono"); f.setPixelSize(12);
+        QFont f("Segoe UI"); f.setPixelSize(12);
         p.setFont(f); p.setPen(QColor("#555555"));
         p.drawText(r,Qt::AlignCenter,"Collecting data...");
         return;
@@ -97,7 +97,7 @@ void ProcBwGraph::paintEvent(QPaintEvent *)
     drawLine(m_out,QColor("#6366f1"));
     drawLine(m_in, QColor("#10b981"));
 
-    QFont lf("Ubuntu Mono"); lf.setPixelSize(11); p.setFont(lf);
+    QFont lf("Segoe UI"); lf.setPixelSize(11); p.setFont(lf);
     if (!m_out.isEmpty()) {
         p.setPen(QColor("#6366f1"));
         p.drawText(QRect(r.left()+6,r.top()+4,120,16),
@@ -160,18 +160,18 @@ void ProcessDetailOverlay::buildLayout()
     m_procName = new QLabel("", hdr);
     m_procName->setStyleSheet(
         "color:#cccccc;font-size:17px;font-weight:700;"
-        "font-family:'Ubuntu Mono';background:transparent;");
+        "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;background:transparent;");
     m_exePath = new QLabel("", hdr);
     m_exePath->setStyleSheet(
         "color:#8a8a8a;font-size:11px;"
-        "font-family:'Ubuntu Mono';background:transparent;");
+        "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;background:transparent;");
     nc->addWidget(m_procName);
     nc->addWidget(m_exePath);
 
     m_pidLabel = new QLabel("", hdr);
     m_pidLabel->setStyleSheet(
         "color:#8a8a8a;font-size:14px;"
-        "font-family:'Ubuntu Mono';background:transparent;");
+        "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;background:transparent;");
 
     auto *closeBtn = new QPushButton("✕", hdr);
     closeBtn->setFixedSize(32,32);
@@ -350,7 +350,7 @@ void ProcessDetailOverlay::drawMiniMap(
         QPen(Qt::NoPen),QBrush(QColor("#6366f1")))->setZValue(5);
     auto*sl=m_mapScene->addText("you");
     sl->setDefaultTextColor(QColor("#6366f1"));
-    sl->setFont(QFont("Ubuntu Mono",7));
+    sl->setFont(QFont("Segoe UI",7));
     sl->setPos(src.x()+7,src.y()-8); sl->setZValue(6);
 
     // Route arcs
