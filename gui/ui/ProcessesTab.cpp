@@ -21,9 +21,9 @@ ProcessesTab::ProcessesTab(QWidget *parent) : QWidget(parent)
 
     auto *titleLbl = new QLabel("Processes", topBar);
     titleLbl->setStyleSheet(
-        "color:#cccccc;font-size:16px;font-weight:600;font-family:Monospace;");
+        "color:#ffffff;font-size:16px;font-weight:600;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_countLabel = new QLabel("", topBar);
-    m_countLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:Monospace;");
+    m_countLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     tl->addWidget(titleLbl);
     tl->addWidget(m_countLabel);
     tl->addStretch();
