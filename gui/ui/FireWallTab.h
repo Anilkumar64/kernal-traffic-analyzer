@@ -3,7 +3,6 @@
 #include <QTableWidget>
 #include <QLabel>
 #include "../core/FirewallManager.h"
-#include "../core/BandwidthThrottler.h"
 #include "../core/TrafficEntry.h"
 #include "../core/ProcEntry.h"
 
@@ -17,16 +16,12 @@ public:
 
 private slots:
     void onRulesChanged();
-    void blockSelected();
-    void unblockSelected();
 
 private:
     void rebuild();
-    void rebuildThrottleTable();
 
     QTableWidget *m_connTable;     // active connections with block buttons
     QTableWidget *m_rulesTable;    // current firewall rules
-    QTableWidget *m_throttleTable; // bandwidth throttle rules
     QLabel *m_statusLabel;
 
     QVector<TrafficEntry> m_conns;
