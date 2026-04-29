@@ -22,7 +22,7 @@ AlertPopup::AlertPopup(QWidget *parent) : QWidget(parent,
         "  background-color: #252526;"
         "  border: 1px solid #ef4444;"
         "  border-radius: 12px;"
-        "  font-family: 'Ubuntu Mono';"
+        "  font-family:'Segoe UI','Ubuntu',Arial,sans-serif;"
         "}");
 
     auto *lay = new QHBoxLayout(root);
