@@ -66,21 +66,21 @@ void ProcessLoadBar::paintEvent(QPaintEvent *)
                       m_anomaly != "None";
 
     // Background
-    p.fillRect(r, hasAnomaly ? QColor("#2e1515") : QColor("#1e1e1e"));
+    p.fillRect(r, hasAnomaly ? QColor("#2a1515") : QColor("#252526"));
 
     // Left accent bar
     p.fillRect(0, 0, 3, r.height(),
                hasAnomaly ? QColor("#ef4444") : QColor("#6366f1"));
 
     // Process name
-    QFont nf("Ubuntu Mono"); nf.setPixelSize(15); nf.setWeight(QFont::Medium);
+    QFont nf("Segoe UI"); nf.setPixelSize(15); nf.setWeight(QFont::Medium);
     p.setFont(nf);
     p.setPen(hasAnomaly ? QColor("#ef4444") : QColor("#cccccc"));
     p.drawText(QRect(14, 8, 220, 22),
                Qt::AlignLeft|Qt::AlignVCenter, m_process);
 
     // Exe path
-    QFont ef("Ubuntu Mono"); ef.setPixelSize(11);
+    QFont ef("Segoe UI"); ef.setPixelSize(11);
     p.setFont(ef);
     p.setPen(QColor("#8a8a8a"));
     QString exe = m_exe.length() > 45 ? "..." + m_exe.right(42) : m_exe;
@@ -89,7 +89,7 @@ void ProcessLoadBar::paintEvent(QPaintEvent *)
 
     // Anomaly badge
     if (hasAnomaly) {
-        QFont bf("Ubuntu Mono"); bf.setPixelSize(10); bf.setWeight(QFont::Bold);
+        QFont bf("Segoe UI"); bf.setPixelSize(10); bf.setWeight(QFont::Bold);
         p.setFont(bf);
         QFontMetrics fm(bf);
         int bw = fm.horizontalAdvance(m_anomaly) + 14;
@@ -104,7 +104,7 @@ void ProcessLoadBar::paintEvent(QPaintEvent *)
     int rx = r.width() - 300;
 
     // Connection count + total bytes
-    QFont sf("Ubuntu Mono"); sf.setPixelSize(12);
+    QFont sf("Segoe UI"); sf.setPixelSize(12);
     p.setFont(sf);
     p.setPen(QColor("#8a8a8a"));
     p.drawText(QRect(rx, 8, 90, 18),
@@ -122,7 +122,7 @@ void ProcessLoadBar::paintEvent(QPaintEvent *)
     int inY  = 46;
 
     // Labels
-    QFont lf("Ubuntu Mono"); lf.setPixelSize(10);
+    QFont lf("Segoe UI"); lf.setPixelSize(10);
     p.setFont(lf);
     p.setPen(QColor("#8a8a8a"));
     p.drawText(QRect(barX-34, outY, 32, barH),
@@ -186,16 +186,16 @@ LoadBalancerTab::LoadBalancerTab(QWidget *parent) : QWidget(parent)
     tl->setContentsMargins(20,0,20,0);
 
     auto *title = new QLabel("Bandwidth Load", topBar);
-    title->setStyleSheet("color:#cccccc;font-size:17px;font-weight:600;"
-                         "font-family:'Ubuntu Mono';");
+    title->setStyleSheet("color:#ffffff;font-size:17px;font-weight:600;"
+                         "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     auto *hint = new QLabel(
         "Live bandwidth per process  —  click any row to inspect",
         topBar);
     hint->setStyleSheet("color:#8a8a8a;font-size:14px;"
-                        "font-family:'Ubuntu Mono';");
+                        "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_totalLabel = new QLabel("", topBar);
     m_totalLabel->setStyleSheet("color:#8a8a8a;font-size:14px;"
-                                "font-family:'Ubuntu Mono';");
+                                "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     tl->addWidget(title);
     tl->addSpacing(16);
     tl->addWidget(hint);
@@ -212,7 +212,7 @@ LoadBalancerTab::LoadBalancerTab(QWidget *parent) : QWidget(parent)
     auto mkH = [&](const QString &t, int stretch=0) {
         auto *l = new QLabel(t, hdr);
         l->setStyleSheet("color:#8a8a8a;font-size:14px;font-weight:700;"
-                         "font-family:'Ubuntu Mono';letter-spacing:1px;");
+                         "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;letter-spacing:1px;");
         if (stretch) hl->addWidget(l,stretch);
         else hl->addWidget(l);
     };
