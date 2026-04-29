@@ -48,47 +48,6 @@ static bool dns_read_u16(const struct sk_buff *skb, unsigned int offset, u16 *ou
 }
 
 /**
- * dns_skip_name() - Skip a DNS name at a packet offset.
- * @skb: Packet buffer.
- * @base: DNS message start offset.
- * @offset: In/out absolute offset.
- * @return: True when a syntactically valid name was skipped.
- * @note: Compression pointers terminate the current encoded name.
- */
-static bool dns_skip_name(const struct sk_buff *skb, unsigned int base,
-			  unsigned int *offset)
-{
-	u8 len;
-	unsigned int pos = *offset;
-	unsigned int depth = 0;
-
-	while (pos < skb->len) {
-		if (!dns_read_u8(skb, pos, &len))
-			return false;
-		if ((len & DNS_POINTER_MASK) == DNS_POINTER_VALUE) {
-			u8 next;
-
-			if (!dns_read_u8(skb, pos + 1, &next))
-				return false;
-			*offset = pos + DNS_COMPRESSED_NAME_LEN;
-			return (((((u16)(len & ~DNS_POINTER_MASK)) << 8) | next) +
-				base) < skb->len;
-		}
-		if (len == 0) {
-			*offset = pos + 1;
-			return true;
-		}
-		if ((len & DNS_POINTER_MASK) != 0)
-			return false;
-		pos += len + 1;
-		if (pos > skb->len || ++depth > DNS_MAX_POINTER_DEPTH)
-			return false;
-	}
-
-	return false;
-}
-
-/**
  * dns_parse_name() - Decode a DNS name into a dotted string.
  * @skb: Packet buffer.
  * @base: DNS message start offset.
@@ -246,4 +205,3 @@ void dns_parse_response(const struct sk_buff *skb, unsigned int data_offset)
 		offset = rdata + rdlen;
 	}
 }
-
