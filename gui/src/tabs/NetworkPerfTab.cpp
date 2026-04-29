@@ -53,7 +53,9 @@ protected:
 
         const QRect plot = rect().adjusted(52, 16, -16, -30);
         p.setPen(QPen(QColor(KtaColors::BgElevated), 1));
-        const double maxSample = std::max(1.0, *std::max_element(samples_.cbegin(), samples_.cend()));
+        const double maxSample = samples_.isEmpty()
+            ? 1.0
+            : std::max(1.0, *std::max_element(samples_.cbegin(), samples_.cend()));
         const double yMax = std::max(1.0, maxSample * 1.2);
         for (int i = 0; i < 5; ++i) {
             const int y = plot.top() + (plot.height() * i / 4);

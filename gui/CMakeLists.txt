@@ -23,7 +23,22 @@ set(SOURCES
   src/tabs/NetworkPerfTab.cpp
 )
 
-add_executable(kta_gui ${SOURCES} resources/resources.qrc)
+set(HEADERS
+  include/Style.h include/ProcReader.h include/HistoryDB.h
+  include/Exporter.h include/MainWindow.h
+  include/models/TrafficModel.h include/models/ProcModel.h
+  include/models/DnsModel.h include/models/AnomalyModel.h
+  include/models/RouteModel.h
+  include/delegates/StateBadgeDelegate.h include/delegates/ProtoBadgeDelegate.h
+  include/delegates/RateBarDelegate.h include/delegates/PerfBarDelegate.h
+  include/delegates/TtlBarDelegate.h
+  include/tabs/ConnectionsTab.h include/tabs/ProcessesTab.h
+  include/tabs/DnsTab.h include/tabs/AnomalyTab.h
+  include/tabs/RoutesTab.h include/tabs/HistoryTab.h
+  include/tabs/NetworkPerfTab.h
+)
+
+add_executable(kta_gui ${SOURCES} ${HEADERS} resources/resources.qrc)
 target_include_directories(kta_gui PRIVATE include)
 target_compile_options(kta_gui PRIVATE -Wall -Wextra -Wpedantic -O2)
 target_link_libraries(kta_gui PRIVATE

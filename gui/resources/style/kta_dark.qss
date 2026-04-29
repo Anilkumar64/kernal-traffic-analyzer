@@ -51,7 +51,6 @@ QTableView, QTreeView {
     selection-color: #e6edf3;
     gridline-color: #30363d;
     outline: 0;
-    qproperty-showGrid: false;
 }
 
 QTableView::item, QTreeView::item {
