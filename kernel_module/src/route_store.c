@@ -6,30 +6,17 @@
 #include <linux/string.h>
 #include <linux/timekeeping.h>
 #include <linux/inet.h>
+#include <linux/mutex.h>
 #include "../include/route_store.h"
 #include "../include/netlink_comm.h"
 
 static DEFINE_HASHTABLE(route_table, ROUTE_STORE_BITS);
 static DEFINE_SPINLOCK(route_lock);
-
-/*
- * pending_write_ip — persists the current DEST IP across write() syscalls.
- *
- * The daemon writes DEST/STATUS/HOP as separate lines which the kernel
- * receives as separate write() calls.  Without this static, the local
- * `cur` pointer in route_store_write() is reset to NULL on every call,
- * so STATUS and HOP lines after the first write() are silently ignored.
- *
- * We store the IP (not a pointer) to avoid any use-after-free risk if
- * the entry is evicted between calls.  Each STATUS/HOP write resolves
- * the entry freshly from the hash table using this IP.
- */
-static __be32 pending_write_ip = 0;
+static DEFINE_MUTEX(route_write_mutex);
 
 void route_store_init(void)
 {
     hash_init(route_table);
-    pending_write_ip = 0;
 }
 
 static struct route_entry *__find_entry(__be32 ip)
@@ -67,7 +54,7 @@ static inline bool is_routable(__be32 ip)
 
 void route_store_request(__be32 ip, const char *domain)
 {
-    struct route_entry *e;
+    struct route_entry *e, *existing;
     u64 now = ktime_get_real_seconds();
     u32 h = jhash(&ip, sizeof(ip), 0);
 
@@ -112,6 +99,22 @@ void route_store_request(__be32 ip, const char *domain)
         strscpy(e->domain, domain, sizeof(e->domain));
 
     spin_lock(&route_lock);
+    existing = __find_entry(ip);
+    if (existing)
+    {
+        if (existing->status != ROUTE_STATUS_PENDING &&
+            existing->status != ROUTE_STATUS_RUNNING)
+        {
+            existing->hop_count = 0;
+            existing->status = ROUTE_STATUS_PENDING;
+            existing->requested_at = now;
+            if (domain && domain[0] && !existing->domain[0])
+                strscpy(existing->domain, domain, sizeof(existing->domain));
+        }
+        spin_unlock(&route_lock);
+        kfree(e);
+        return;
+    }
     hash_add(route_table, &e->node, h);
     spin_unlock(&route_lock);
 }
@@ -148,52 +151,16 @@ static const char *next_field(const char *p, char *out, size_t outsz)
     return p;
 }
 
-/*
- * route_store_write — parse DEST / STATUS / HOP lines from the daemon.
- *
- * The daemon (ta_route_daemon.py) writes results line by line.  Each
- * line arrives as a separate write() syscall so we cannot use a local
- * `cur` pointer — it would be NULL on every call except the one that
- * contains "DEST".  Instead we persist the current IP in the module-
- * level `pending_write_ip` variable and look up the entry fresh on
- * every STATUS/HOP call.
- *
- * Protocol:
- *   DEST <ip>
- *   STATUS DONE|FAILED|RUNNING
- *   HOP <n> <ip> <rtt_us> <host> <city> <country> <cc> \
- *       <lat_e6> <lon_e6> <asn> <org>
- */
-/*
- * route_store_write — parse DEST / STATUS / HOP lines from the daemon.
- *
- * The daemon (ta_route_daemon.py) writes results line by line.  Each
- * line arrives as a separate write() syscall so we cannot use a local
- * `cur` pointer — it would be NULL on every call except the one that
- * contains "DEST".  Instead we persist the current IP in the module-
- * level `pending_write_ip` variable and look up the entry fresh on
- * every STATUS/HOP call.
- *
- * Protocol:
- *   DEST <ip>
- *   STATUS DONE|FAILED|RUNNING
- *   HOP <n> <ip> <rtt_us> <host> <city> <country> <cc> \
- *       <lat_e6> <lon_e6> <asn> <org>
- *
- * Stack-frame note: `line` and `fld` are declared static to keep the
- * frame well under the 1024-byte kernel limit (-Wframe-larger-than).
- * This is safe because procfs write() is serialised by the single-open
- * file and we never sleep or re-enter this function concurrently.
- */
 int route_store_write(const char *buf, size_t len)
 {
     const char *p = buf;
     const char *end = buf + len;
     u64 now = ktime_get_real_seconds();
+    __be32 cur_ip = 0;
+    char line[513];
+    char fld[128];
 
-    /* Large buffers in BSS, not on the stack. */
-    static char line[513];
-    static char fld[128];
+    mutex_lock(&route_write_mutex);
 
     while (p < end)
     {
@@ -249,20 +216,23 @@ int route_store_write(const char *buf, size_t len)
             }
             spin_unlock(&route_lock);
 
-            pending_write_ip = ip;
+            cur_ip = ip;
             continue;
         }
 
         /* ---- STATUS DONE|FAILED|RUNNING ---- */
-        /* ---- STATUS DONE|FAILED|RUNNING ---- */
-        if (strncmp(line, "STATUS ", 7) == 0 && pending_write_ip)
+        if (strncmp(line, "STATUS ", 7) == 0 && cur_ip)
         {
             const char *sv = line + 7;
             u8 status;
 
-            if (strncmp(sv, "DONE", 4) == 0)
+            if (strncmp(sv, "DONE", 4) == 0 ||
+                strncmp(sv, "OK", 2) == 0)
                 status = ROUTE_STATUS_DONE;
             else if (strncmp(sv, "FAILED", 6) == 0)
+                status = ROUTE_STATUS_FAILED;
+            else if (strncmp(sv, "FAIL", 4) == 0 ||
+                     strncmp(sv, "TIMEOUT", 7) == 0)
                 status = ROUTE_STATUS_FAILED;
             else if (strncmp(sv, "RUNNING", 7) == 0)
                 status = ROUTE_STATUS_RUNNING;
@@ -271,7 +241,7 @@ int route_store_write(const char *buf, size_t len)
 
             spin_lock(&route_lock);
             {
-                struct route_entry *e = __find_entry(pending_write_ip);
+                struct route_entry *e = __find_entry(cur_ip);
                 if (e)
                 {
                     e->status = status;
@@ -284,7 +254,7 @@ int route_store_write(const char *buf, size_t len)
                         struct route_entry *snap = kmalloc(sizeof(*snap), GFP_ATOMIC);
                         if (snap)
                         {
-                            e = __find_entry(pending_write_ip);
+                            e = __find_entry(cur_ip);
                             if (e)
                                 *snap = *e;
                             else
@@ -309,7 +279,7 @@ int route_store_write(const char *buf, size_t len)
 
         /* ---- HOP <n> <ip> <rtt_us> <host> <city> <country> <cc>
                     <lat_e6> <lon_e6> <asn> <org> ---- */
-        if (strncmp(line, "HOP ", 4) == 0 && pending_write_ip)
+        if (strncmp(line, "HOP ", 4) == 0 && cur_ip)
         {
             const char *fp = line + 4;
             struct route_hop hop;
@@ -329,7 +299,8 @@ int route_store_write(const char *buf, size_t len)
             if (strcmp(fld, "*") != 0)
             {
                 const char *ep;
-                in4_pton(fld, -1, (u8 *)&hop.ip, -1, &ep);
+                if (in4_pton(fld, -1, (u8 *)&hop.ip, -1, &ep) != 1)
+                    hop.ip = 0;
             }
 
             /* rtt_us */
@@ -392,7 +363,7 @@ int route_store_write(const char *buf, size_t len)
 
             spin_lock(&route_lock);
             {
-                struct route_entry *e = __find_entry(pending_write_ip);
+                struct route_entry *e = __find_entry(cur_ip);
                 if (e && e->hop_count < MAX_HOPS)
                 {
                     e->hops[e->hop_count++] = hop;
@@ -404,6 +375,7 @@ int route_store_write(const char *buf, size_t len)
         }
     }
 
+    mutex_unlock(&route_write_mutex);
     return 0;
 }
 
@@ -489,5 +461,4 @@ void route_store_cleanup(void)
     }
     spin_unlock(&route_lock);
 
-    pending_write_ip = 0;
 }
