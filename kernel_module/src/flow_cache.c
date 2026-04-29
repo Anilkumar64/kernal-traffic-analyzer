@@ -1,242 +1,277 @@
-#include <linux/slab.h>
-#include <linux/jhash.h>
-#include <linux/spinlock.h>
-#include <linux/jiffies.h>
-#include <linux/atomic.h>
-#include "../include/flow_cache.h"
-
-#define FLOW_HASH_BITS 10
-#define FLOW_SCAN_COOLDOWN (HZ / 2) /* 500 ms */
-#define FLOW_NEGATIVE_TTL (HZ * 2)  /* 2 sec  */
-#define FLOW_CACHE_MAX_ENTRIES 4096
-#define FLOW_CACHE_TTL_SEC 120
-#define FLOW_CACHE_TTL_JIFFIES (FLOW_CACHE_TTL_SEC * HZ)
-
-/*
- * DEFINE_HASHTABLE cannot be combined with static when the bit-width
- * comes from a #define — the macro stringifies the name and the
- * preprocessor misparses it.  Declare without static; the symbol is
- * local to this translation unit because it is not extern'd anywhere.
+/**
+ * @file flow_cache.c
+ * @brief Canonical flow-key to PID cache with resolver backoff.
+ * @details When socket and inode attribution miss, a normalized five-tuple can
+ * still identify a process after asynchronous resolver work completes. The
+ * cache also tracks whether a flow should be rescanned after a short interval
+ * so long-lived sockets can recover from PID ownership changes.
+ * @author Kernel Traffic Analyzer Project
+ * @license GPL-2.0
  */
-static DEFINE_SPINLOCK(flow_lock);
-DEFINE_HASHTABLE(flow_table, FLOW_HASH_BITS);
-static atomic_t flow_cache_count = ATOMIC_INIT(0);
 
-static u32 flow_hash(struct flow_key *key)
+#include <linux/hashtable.h>
+#include <linux/jhash.h>
+#include <linux/pid.h>
+#include <linux/rcupdate.h>
+#include <linux/sched.h>
+#include <linux/slab.h>
+#include <linux/spinlock.h>
+#include <linux/string.h>
+#include "../include/kta_api.h"
+
+static DEFINE_HASHTABLE(flow_hash, FLOW_CACHE_HASH_BITS);
+static DEFINE_SPINLOCK(flow_cache_lock);
+static u32 flow_cache_entries;
+
+/**
+ * flow_pid_is_alive() - Check whether a cached PID is live.
+ * @pid: PID to test.
+ * @return: True when @pid maps to a task.
+ * @note: Used to avoid attributing packets to recycled or dead processes.
+ */
+static bool flow_pid_is_alive(pid_t pid)
 {
-    return jhash(key, sizeof(*key), 0);
+	bool alive;
+
+	if (pid <= 0)
+		return false;
+
+	rcu_read_lock();
+	alive = pid_task(find_vpid(pid), PIDTYPE_PID) != NULL;
+	rcu_read_unlock();
+
+	return alive;
 }
 
-static inline bool flow_key_equal(struct flow_key *a, struct flow_key *b)
+/**
+ * flow_hash_key() - Hash a canonical flow key.
+ * @key: Flow key to hash.
+ * @return: jhash2 hash value.
+ * @note: The key is copied and canonicalized before hashing.
+ */
+static u32 flow_hash_key(const struct flow_key *key)
 {
-    return a->src_ip == b->src_ip &&
-           a->dest_ip == b->dest_ip &&
-           a->src_port == b->src_port &&
-           a->dest_port == b->dest_port &&
-           a->protocol == b->protocol;
+	struct flow_key canonical = *key;
+
+	make_canonical(&canonical);
+	return jhash2((const u32 *)&canonical, sizeof(canonical) / sizeof(u32),
+		      KTA_JHASH_INITVAL);
 }
 
-void flow_cache_init(void)
+/**
+ * flow_keys_equal() - Compare two flow keys after canonicalization.
+ * @left: First key.
+ * @right: Second key.
+ * @return: True when keys describe the same bidirectional flow.
+ * @note: Padding bytes are part of struct flow_key and are zeroed by callers.
+ */
+static bool flow_keys_equal(const struct flow_key *left,
+			    const struct flow_key *right)
 {
-    hash_init(flow_table);
-    atomic_set(&flow_cache_count, 0);
+	struct flow_key a = *left;
+	struct flow_key b = *right;
+
+	make_canonical(&a);
+	make_canonical(&b);
+	return memcmp(&a, &b, sizeof(a)) == 0;
 }
 
-static void flow_free_entry(struct flow_entry *entry)
+/**
+ * flow_cache_init() - Initialize the flow cache.
+ * @return: Zero on success.
+ * @note: Entry storage is allocated on demand.
+ */
+int flow_cache_init(void)
 {
-    hash_del(&entry->node);
-    kfree(entry);
-    atomic_dec_if_positive(&flow_cache_count);
+	hash_init(flow_hash);
+	flow_cache_entries = 0;
+	return 0;
 }
 
-static void flow_evict_stale_locked(unsigned long now)
+/**
+ * flow_cache_exit() - Free all flow cache entries.
+ * @return: None.
+ * @note: Called after Netfilter hooks have been removed.
+ */
+void flow_cache_exit(void)
 {
-    struct flow_entry *entry;
-    struct hlist_node *tmp;
-    int bkt;
+	struct flow_cache_entry *entry;
+	struct hlist_node *tmp;
+	unsigned int bucket;
 
-    hash_for_each_safe(flow_table, bkt, tmp, entry, node)
-    {
-        if (time_after(now, entry->last_seen + FLOW_CACHE_TTL_JIFFIES))
-            flow_free_entry(entry);
-    }
+	spin_lock_bh(&flow_cache_lock);
+	hash_for_each_safe(flow_hash, bucket, tmp, entry, hnode) {
+		hash_del(&entry->hnode);
+		kfree(entry);
+	}
+	flow_cache_entries = 0;
+	spin_unlock_bh(&flow_cache_lock);
 }
 
-static void flow_evict_lru_locked(void)
+/**
+ * flow_cache_evict_lru_locked() - Evict the least recently used flow entry.
+ * @return: None.
+ * @note: Caller must hold flow_cache_lock.
+ */
+static void flow_cache_evict_lru_locked(void)
 {
-    struct flow_entry *entry;
-    struct flow_entry *oldest = NULL;
-    int bkt;
+	struct flow_cache_entry *entry;
+	struct flow_cache_entry *oldest = NULL;
+	unsigned int bucket;
 
-    hash_for_each(flow_table, bkt, entry, node)
-    {
-        if (!oldest || time_before(entry->last_seen, oldest->last_seen))
-            oldest = entry;
-    }
-
-    if (oldest)
-        flow_free_entry(oldest);
+	hash_for_each(flow_hash, bucket, entry, hnode) {
+		if (!oldest || time_before(entry->accessed, oldest->accessed))
+			oldest = entry;
+	}
+	if (oldest) {
+		hash_del(&oldest->hnode);
+		kfree(oldest);
+		if (flow_cache_entries)
+			flow_cache_entries--;
+	}
 }
 
-bool flow_cache_exists(struct flow_key *key)
+/**
+ * flow_cache_lookup() - Resolve a flow key to a live PID.
+ * @key: Flow key to look up.
+ * @return: Live PID on hit, otherwise zero.
+ * @note: All hash operations use canonicalized keys.
+ */
+pid_t flow_cache_lookup(const struct flow_key *key)
 {
-    struct flow_entry *entry;
-    bool found = false;
+	struct flow_cache_entry *entry;
+	u32 hash;
+	pid_t pid = 0;
 
-    spin_lock(&flow_lock);
-    flow_evict_stale_locked(jiffies);
+	if (!key)
+		return 0;
 
-    hash_for_each_possible(flow_table, entry, node, flow_hash(key))
-    {
-        if (flow_key_equal(&entry->key, key))
-        {
-            found = true;
-            break;
-        }
-    }
+	hash = flow_hash_key(key);
+	spin_lock_bh(&flow_cache_lock);
+	hash_for_each_possible(flow_hash, entry, hnode, hash) {
+		if (!flow_keys_equal(&entry->key, key))
+			continue;
+		if (!flow_pid_is_alive(entry->pid)) {
+			hash_del(&entry->hnode);
+			kfree(entry);
+			if (flow_cache_entries)
+				flow_cache_entries--;
+			break;
+		}
+		entry->accessed = jiffies;
+		pid = entry->pid;
+		break;
+	}
+	spin_unlock_bh(&flow_cache_lock);
 
-    spin_unlock(&flow_lock);
-    return found;
+	return pid;
 }
 
-pid_t flow_cache_lookup(struct flow_key *key, bool *should_scan)
+/**
+ * flow_cache_store() - Store a flow key to PID mapping.
+ * @key: Flow key to cache.
+ * @pid: PID to associate with @key.
+ * @return: None.
+ * @note: Uses GFP_ATOMIC because packet hooks may update recent attribution.
+ */
+void flow_cache_store(const struct flow_key *key, pid_t pid)
 {
-    struct flow_entry *entry;
-    pid_t pid = 0;
-    unsigned long now = jiffies;
+	struct flow_cache_entry *entry;
+	struct flow_key canonical;
+	u32 hash;
 
-    *should_scan = false;
+	if (!key || pid <= 0 || !flow_pid_is_alive(pid))
+		return;
 
-    spin_lock(&flow_lock);
-    flow_evict_stale_locked(now);
+	canonical = *key;
+	make_canonical(&canonical);
+	hash = flow_hash_key(&canonical);
 
-    hash_for_each_possible(flow_table, entry, node, flow_hash(key))
-    {
-        if (!flow_key_equal(&entry->key, key))
-            continue;
+	spin_lock_bh(&flow_cache_lock);
+	hash_for_each_possible(flow_hash, entry, hnode, hash) {
+		if (flow_keys_equal(&entry->key, &canonical)) {
+			entry->pid = pid;
+			entry->should_scan = true;
+			entry->accessed = jiffies;
+			spin_unlock_bh(&flow_cache_lock);
+			return;
+		}
+	}
 
-        entry->last_seen = now;
+	if (flow_cache_entries >= MAX_FLOW_CACHE_ENTRIES)
+		flow_cache_evict_lru_locked();
 
-        if (entry->pid > 0)
-        {
-            pid = entry->pid;
-            goto out;
-        }
-
-        if (entry->negative)
-        {
-            if (time_before(now, entry->last_scan_time + FLOW_NEGATIVE_TTL))
-                goto out;
-        }
-
-        if (entry->resolving)
-            goto out;
-
-        if (time_before(now, entry->last_scan_time + FLOW_SCAN_COOLDOWN))
-            goto out;
-
-        entry->resolving = true;
-        entry->last_scan_time = now;
-        *should_scan = true;
-        goto out;
-    }
-
-    /* New entry */
-    if (atomic_read(&flow_cache_count) >= FLOW_CACHE_MAX_ENTRIES)
-        flow_evict_lru_locked();
-
-    entry = kmalloc(sizeof(*entry), GFP_ATOMIC);
-    if (entry)
-    {
-        entry->key = *key;
-        entry->pid = 0;
-        entry->last_seen = now;
-        entry->last_scan_time = now;
-        entry->resolving = true;
-        entry->negative = false;
-        hash_add(flow_table, &entry->node, flow_hash(key));
-        atomic_inc(&flow_cache_count);
-        *should_scan = true;
-    }
-
-out:
-    spin_unlock(&flow_lock);
-    return pid;
+	entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
+	if (!entry) {
+		spin_unlock_bh(&flow_cache_lock);
+		pr_err("kta: flow_cache: allocation failed\n");
+		return;
+	}
+	entry->key = canonical;
+	entry->pid = pid;
+	entry->should_scan = true;
+	entry->accessed = jiffies;
+	hash_add(flow_hash, &entry->hnode, hash);
+	flow_cache_entries++;
+	spin_unlock_bh(&flow_cache_lock);
 }
 
-void flow_cache_mark_resolved(struct flow_key *key, pid_t pid)
+/**
+ * flow_cache_should_scan() - Decide whether async resolver work should run.
+ * @key: Flow key to inspect.
+ * @return: True when the flow should be scanned.
+ * @note: Scanned entries become eligible again after FLOW_RESCAN_INTERVAL_SECS.
+ */
+bool flow_cache_should_scan(const struct flow_key *key)
 {
-    struct flow_entry *entry;
-    unsigned long now = jiffies;
+	struct flow_cache_entry *entry;
+	u32 hash;
+	bool should = true;
 
-    spin_lock(&flow_lock);
-    flow_evict_stale_locked(now);
+	if (!key)
+		return false;
 
-    hash_for_each_possible(flow_table, entry, node, flow_hash(key))
-    {
-        if (!flow_key_equal(&entry->key, key))
-            continue;
-        entry->pid = pid;
-        entry->last_seen = now;
-        entry->resolving = false;
-        entry->negative = false;
-        goto out;
-    }
+	hash = flow_hash_key(key);
+	spin_lock_bh(&flow_cache_lock);
+	hash_for_each_possible(flow_hash, entry, hnode, hash) {
+		if (!flow_keys_equal(&entry->key, key))
+			continue;
+		if (!entry->should_scan &&
+		    time_after(jiffies, entry->accessed +
+			       FLOW_RESCAN_INTERVAL_SECS * HZ))
+			entry->should_scan = true;
+		should = entry->should_scan;
+		break;
+	}
+	spin_unlock_bh(&flow_cache_lock);
 
-    entry = kmalloc(sizeof(*entry), GFP_ATOMIC);
-    if (entry)
-    {
-        if (atomic_read(&flow_cache_count) >= FLOW_CACHE_MAX_ENTRIES)
-            flow_evict_lru_locked();
-        entry->key = *key;
-        entry->pid = pid;
-        entry->last_seen = now;
-        entry->last_scan_time = now;
-        entry->resolving = false;
-        entry->negative = false;
-        hash_add(flow_table, &entry->node, flow_hash(key));
-        atomic_inc(&flow_cache_count);
-    }
-
-out:
-    spin_unlock(&flow_lock);
+	return should;
 }
 
-void flow_cache_mark_negative(struct flow_key *key)
+/**
+ * flow_cache_set_scanned() - Mark a flow as scanned by the resolver.
+ * @key: Flow key that was scheduled or scanned.
+ * @return: None.
+ * @note: Missing entries are inserted with PID zero suppressed by design.
+ */
+void flow_cache_set_scanned(const struct flow_key *key)
 {
-    struct flow_entry *entry;
+	struct flow_cache_entry *entry;
+	u32 hash;
 
-    spin_lock(&flow_lock);
-    flow_evict_stale_locked(jiffies);
+	if (!key)
+		return;
 
-    hash_for_each_possible(flow_table, entry, node, flow_hash(key))
-    {
-        if (!flow_key_equal(&entry->key, key))
-            continue;
-        entry->pid = 0;
-        entry->resolving = false;
-        entry->negative = true;
-        entry->last_scan_time = jiffies;
-        break;
-    }
-
-    spin_unlock(&flow_lock);
+	hash = flow_hash_key(key);
+	spin_lock_bh(&flow_cache_lock);
+	hash_for_each_possible(flow_hash, entry, hnode, hash) {
+		if (flow_keys_equal(&entry->key, key)) {
+			entry->should_scan = false;
+			entry->accessed = jiffies;
+			spin_unlock_bh(&flow_cache_lock);
+			return;
+		}
+	}
+	spin_unlock_bh(&flow_cache_lock);
 }
 
-void flow_cache_cleanup(void)
-{
-    struct flow_entry *entry;
-    struct hlist_node *tmp;
-    int bkt;
-
-    spin_lock(&flow_lock);
-
-    hash_for_each_safe(flow_table, bkt, tmp, entry, node)
-    {
-        hash_del(&entry->node);
-        kfree(entry);
-    }
-    atomic_set(&flow_cache_count, 0);
-
-    spin_unlock(&flow_lock);
-}
