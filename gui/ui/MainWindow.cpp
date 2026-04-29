@@ -46,8 +46,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     // Status bar
     m_statusLabel = new QLabel("Waiting for kernel module...", this);
     m_statusLabel->setStyleSheet(
-        "color:#8a8a8a;font-size:14px;padding:0 8px;"
-        "font-family:'Ubuntu Mono';");
+        "color:#ffffff;font-size:12px;padding:0 8px;"
+        "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     statusBar()->addPermanentWidget(m_statusLabel);
     statusBar()->setSizeGripEnabled(false);
 
@@ -165,7 +165,7 @@ void MainWindow::buildMenuBar()
     auto *fileMenu = menuBar()->addMenu("File");
     fileMenu->setStyleSheet(
         "QMenu{background:#252526;border:1px solid #555555;"
-        "color:#cccccc;font-family:'Ubuntu Mono';font-size:13px;}"
+        "color:#cccccc;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;font-size:13px;}"
         "QMenu::item{padding:6px 20px;}"
         "QMenu::item:selected{background:#252545;color:#c586c0;}");
 
