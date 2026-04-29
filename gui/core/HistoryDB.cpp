@@ -245,12 +245,31 @@ void HistoryDB::insertSamples(const QVector<BwSample> &samples)
             QDateTime::currentDateTime().toString("yyyy-MM-dd");
         for (const auto &s : samples)
         {
+            QString key = QString("%1|%2").arg(s.pid).arg(s.process);
+            PreviousBytes prev = m_previousBytes.value(key);
+            quint64 deltaOut = s.outBytes;
+            quint64 deltaIn = s.inBytes;
+
+            if (prev.valid) {
+                deltaOut = (s.outBytes >= prev.outBytes)
+                    ? (s.outBytes - prev.outBytes)
+                    : s.outBytes;
+                deltaIn = (s.inBytes >= prev.inBytes)
+                    ? (s.inBytes - prev.inBytes)
+                    : s.inBytes;
+            }
+
+            prev.outBytes = s.outBytes;
+            prev.inBytes = s.inBytes;
+            prev.valid = true;
+            m_previousBytes.insert(key, prev);
+
             sqlite3_bind_text(stmt, 1, today.toUtf8().constData(),
                               -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(stmt, 2, s.process.toUtf8().constData(),
                               -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int64(stmt, 3, s.outBytes);
-            sqlite3_bind_int64(stmt, 4, s.inBytes);
+            sqlite3_bind_int64(stmt, 3, deltaOut);
+            sqlite3_bind_int64(stmt, 4, deltaIn);
             sqlite3_step(stmt);
             sqlite3_reset(stmt);
         }
