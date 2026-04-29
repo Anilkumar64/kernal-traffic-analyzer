@@ -1,10 +1,12 @@
 #pragma once
+
 #include <QWidget>
 #include "../core/AnomalyEntry.h"
+
 class AnomalyModel;
-class QLineEdit;
 class QSortFilterProxyModel;
-class QSystemTrayIcon;
+class QStackedWidget;
+class QTableView;
 
 class AnomalyTab : public QWidget
 {
@@ -16,6 +18,6 @@ public:
 private:
     AnomalyModel *m_model = nullptr;
     QSortFilterProxyModel *m_proxy = nullptr;
-    QSystemTrayIcon *m_tray = nullptr;
-    int m_lastCount = 0;
+    QStackedWidget *m_stack = nullptr;
+    QTableView *m_table = nullptr;
 };

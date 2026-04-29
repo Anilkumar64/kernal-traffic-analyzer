@@ -1,6 +1,8 @@
 #pragma once
+
 #include <QWidget>
 #include "../core/DnsEntry.h"
+
 class DnsModel;
 class QLineEdit;
 class QSortFilterProxyModel;
@@ -15,4 +17,5 @@ public:
 private:
     DnsModel *m_model = nullptr;
     QSortFilterProxyModel *m_proxy = nullptr;
+    QTableView *m_table = nullptr;
 };

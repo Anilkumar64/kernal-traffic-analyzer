@@ -7,34 +7,50 @@
 #include "ProcessesTab.h"
 #include "RoutesTab.h"
 #include "Sidebar.h"
+#include "StatusBar.h"
+#include "Style.h"
+#include "TitleBar.h"
 #include "../core/Exporter.h"
 #include "../core/HistoryDB.h"
-#include <QDateTime>
+
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QStackedWidget>
-#include <QStatusBar>
 #include <QTimer>
+#include <QVBoxLayout>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle("Kernel Traffic Analyzer");
     resize(1180, 760);
-    auto *file = menuBar()->addMenu("File");
-    auto *exportMenu = file->addMenu("Export");
-    exportMenu->addAction("JSON", this, &MainWindow::exportJson);
-    exportMenu->addAction("CSV", this, &MainWindow::exportCsv);
-    menuBar()->addMenu("Help")->addAction("About", this, [this] {
-        QMessageBox::about(this, "About", "Kernel Traffic Analyzer\nLinux process-level network observability.");
-    });
 
     auto *central = new QWidget(this);
-    auto *layout = new QHBoxLayout(central);
-    layout->setContentsMargins(0, 0, 0, 0);
-    m_sidebar = new Sidebar(central);
-    m_stack = new QStackedWidget(central);
+    auto *root = new QVBoxLayout(central);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+    root->addWidget(new TitleBar(central));
+
+    auto *menu = new QMenuBar(central);
+    auto *file = menu->addMenu("File");
+    file->addAction("Export JSON", this, &MainWindow::exportJson);
+    file->addAction("Export CSV", this, &MainWindow::exportCsv);
+    file->addSeparator();
+    file->addAction("Quit", this, &QWidget::close);
+    auto *help = menu->addMenu("Help");
+    help->addAction("About", this, [this] {
+        QMessageBox::about(this, "About", "Kernel Traffic Analyzer\nLinux process-level network observability.");
+    });
+    root->addWidget(menu);
+
+    auto *body = new QWidget(central);
+    auto *bodyLayout = new QHBoxLayout(body);
+    bodyLayout->setContentsMargins(0, 0, 0, 0);
+    bodyLayout->setSpacing(0);
+    m_sidebar = new Sidebar(body);
+    m_stack = new QStackedWidget(body);
+    m_stack->setStyleSheet(QString("background:%1;").arg(Style::css(KtaColors::BgBase)));
     m_connectionsTab = new ConnectionsTab(m_stack);
     m_processesTab = new ProcessesTab(m_stack);
     m_dnsTab = new DnsTab(m_stack);
@@ -47,9 +63,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
                     static_cast<QWidget *>(m_networkPerfTab)}) {
         m_stack->addWidget(w);
     }
-    layout->addWidget(m_sidebar);
-    layout->addWidget(m_stack, 1);
+    bodyLayout->addWidget(m_sidebar);
+    bodyLayout->addWidget(m_stack, 1);
+    root->addWidget(body, 1);
+
+    m_status = new StatusBar(central);
+    root->addWidget(m_status);
     setCentralWidget(central);
+
     connect(m_sidebar, &Sidebar::currentChanged, this, [this](int index) {
         m_sidebar->setCurrentIndex(index);
         m_stack->setCurrentIndex(index);
@@ -69,15 +90,17 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 void MainWindow::refresh()
 {
     m_snap = ProcReader::readAll();
-    m_connectionsTab->updateData(m_snap.connections);
-    m_processesTab->updateData(m_snap.processes, m_snap.connections);
-    m_dnsTab->updateData(m_snap.dnsMap);
-    m_anomalyTab->updateData(m_snap.anomalies);
-    m_routesTab->updateData(QVector<RouteEntry>(m_snap.routes.begin(), m_snap.routes.end()));
-    m_networkPerfTab->updateData(m_snap);
+    const int current = m_stack->currentIndex();
+    if (current == 0) m_connectionsTab->updateData(m_snap.connections);
+    if (current == 1) m_processesTab->updateData(m_snap.processes, m_snap.connections);
+    if (current == 2) m_dnsTab->updateData(m_snap.dnsMap);
+    if (current == 3) m_anomalyTab->updateData(m_snap.anomalies);
+    if (current == 4) m_routesTab->updateData(QVector<RouteEntry>(m_snap.routes.begin(), m_snap.routes.end()));
+    if (current == 5) m_historyTab->refresh();
+    if (current == 6) m_networkPerfTab->updateData(m_snap);
     m_sidebar->setAnomalyCount(m_snap.anomalyCount());
-    if (m_stack->currentWidget() == m_historyTab) m_historyTab->refresh();
-    updateStatusBar();
+    m_sidebar->setModuleLoaded(!m_snap.connections.isEmpty() || !m_snap.processes.isEmpty() || !m_snap.dnsMap.isEmpty());
+    m_status->updateSnapshot(m_snap);
 }
 
 void MainWindow::writeHistory()
@@ -87,16 +110,6 @@ void MainWindow::writeHistory()
     for (const auto &p : m_snap.processes)
         samples.append({now, p.pid, p.process, p.rateOutBps, p.rateInBps, quint64(p.bytesOut), quint64(p.bytesIn)});
     HistoryDB::instance().insertSamples(samples);
-}
-
-void MainWindow::updateStatusBar()
-{
-    const auto active = std::count_if(m_snap.connections.begin(), m_snap.connections.end(), [](const TrafficEntry &e) { return e.isActive(); });
-    const auto text = m_snap.connections.isEmpty() && m_snap.processes.isEmpty()
-        ? QString("Waiting for kernel module... | %1").arg(QTime::currentTime().toString("hh:mm:ss"))
-        : QString("%1 connections | %2 active | %3 processes | %4")
-              .arg(m_snap.connections.size()).arg(active).arg(m_snap.processes.size()).arg(QTime::currentTime().toString("hh:mm:ss"));
-    statusBar()->showMessage(text);
 }
 
 void MainWindow::exportJson()

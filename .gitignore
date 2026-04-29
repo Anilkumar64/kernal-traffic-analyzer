@@ -23,7 +23,8 @@ compile_commands.json
 __pycache__/
 *.pyc
 .codex
-docs/
+docs/*
+!docs/ebpf_xdp_feature_stack.md
 traffic_gui
 kernel_traffic_analyzer
 kernel_module/entry.*

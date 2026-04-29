@@ -1,6 +1,8 @@
 #pragma once
+
 #include <QMainWindow>
 #include "../core/ProcReader.h"
+
 class AnomalyTab;
 class ConnectionsTab;
 class DnsTab;
@@ -9,6 +11,7 @@ class NetworkPerfTab;
 class ProcessesTab;
 class RoutesTab;
 class Sidebar;
+class StatusBar;
 class QStackedWidget;
 class QTimer;
 
@@ -17,15 +20,16 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = nullptr);
+
 private:
     void refresh();
     void writeHistory();
-    void updateStatusBar();
     void exportJson();
     void exportCsv();
 
     ProcSnapshot m_snap;
     Sidebar *m_sidebar = nullptr;
+    StatusBar *m_status = nullptr;
     QStackedWidget *m_stack = nullptr;
     ConnectionsTab *m_connectionsTab = nullptr;
     ProcessesTab *m_processesTab = nullptr;

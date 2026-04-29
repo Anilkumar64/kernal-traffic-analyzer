@@ -1,13 +1,14 @@
 #include "TrafficModel.h"
+#include "../ui/Style.h"
 #include <QBrush>
 #include <QFont>
 
 static QColor stateColor(const TrafficEntry &e)
 {
-    if (e.state == ConnState::Established) return QColor("#3dbfa4");
-    if (e.state == ConnState::UdpActive) return QColor("#4a9eff");
-    if (e.state == ConnState::SynSent || e.state == ConnState::SynRecv) return QColor("#d4915a");
-    return QColor("#505050");
+    if (e.state == ConnState::Established) return KtaColors::Teal;
+    if (e.state == ConnState::UdpActive) return KtaColors::Accent;
+    if (e.state == ConnState::SynSent || e.state == ConnState::SynRecv) return KtaColors::Amber;
+    return KtaColors::Text4;
 }
 
 TrafficModel::TrafficModel(QObject *parent) : QAbstractTableModel(parent) {}
@@ -48,7 +49,7 @@ QVariant TrafficModel::data(const QModelIndex &index, int role) const
 QVariant TrafficModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole) return {};
-    static const QStringList headers = {"PID", "PROCESS", "PROTOCOL", "LOCAL IP:PORT", "REMOTE IP:PORT",
+    static const QStringList headers = {"PID", "PROCESS", "PROTO", "LOCAL IP:PORT", "REMOTE IP:PORT",
                                         "DOMAIN", "STATE", "IN (BYTES)", "OUT (BYTES)", "IN RATE", "OUT RATE"};
     return headers.value(section);
 }

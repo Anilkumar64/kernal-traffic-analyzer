@@ -1,6 +1,7 @@
 #pragma once
 #include <QString>
 #include <QVector>
+#include "../ui/Style.h"
 
 enum class RouteStatus { Pending, Running, Done, Failed, Unknown };
 
@@ -20,10 +21,10 @@ struct RouteHop {
     bool hasGeo() const { return lat != 0.0 || lon != 0.0; }
 
     QString rttColorHex() const {
-        if (rttMs <= 0)  return "#888888";
-        if (rttMs < 50)  return "#3fb950";
-        if (rttMs < 150) return "#d29922";
-        return "#f85149";
+        if (rttMs <= 0)  return Style::css(KtaColors::Text3);
+        if (rttMs < 50)  return Style::css(KtaColors::Teal);
+        if (rttMs < 150) return Style::css(KtaColors::Amber);
+        return Style::css(KtaColors::Red);
     }
 };
 

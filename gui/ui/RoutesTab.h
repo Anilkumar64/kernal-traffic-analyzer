@@ -1,7 +1,11 @@
 #pragma once
+
 #include <QWidget>
 #include "../core/RouteEntry.h"
+
+class QLabel;
 class QSortFilterProxyModel;
+class QStackedWidget;
 class QTableView;
 class RouteHopModel;
 class RouteModel;
@@ -18,4 +22,6 @@ private:
     RouteHopModel *m_hopModel = nullptr;
     QSortFilterProxyModel *m_proxy = nullptr;
     QTableView *m_table = nullptr;
+    QStackedWidget *m_hopStack = nullptr;
+    QLabel *m_hopTitle = nullptr;
 };

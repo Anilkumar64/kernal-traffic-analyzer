@@ -35,7 +35,7 @@ QVariant DnsModel::data(const QModelIndex &index, int role) const
 QVariant DnsModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole) return {};
-    static const QStringList headers = {"IP ADDRESS", "DOMAIN", "TTL", "FIRST SEEN", "LAST SEEN", "QUERY COUNT"};
+    static const QStringList headers = {"IP ADDRESS", "DOMAIN", "TTL", "FIRST SEEN", "LAST SEEN", "QUERIES"};
     return headers.value(section);
 }
 

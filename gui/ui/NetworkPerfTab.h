@@ -1,7 +1,11 @@
 #pragma once
+
 #include <QWidget>
 #include "../core/ProcReader.h"
+
 class QAbstractTableModel;
+class QGridLayout;
+class QSortFilterProxyModel;
 
 class NetworkPerfTab : public QWidget
 {
@@ -11,4 +15,6 @@ public:
     void updateData(const ProcSnapshot &snap);
 private:
     QAbstractTableModel *m_model = nullptr;
+    QSortFilterProxyModel *m_proxy = nullptr;
+    QGridLayout *m_cards = nullptr;
 };

@@ -20,6 +20,9 @@ set(SOURCES
     core/Exporter.cpp
     ui/MainWindow.cpp
     ui/Sidebar.cpp
+    ui/TitleBar.cpp
+    ui/StatusBar.cpp
+    ui/StatCard.cpp
     ui/ConnectionsTab.cpp
     ui/ProcessesTab.cpp
     ui/DnsTab.cpp
@@ -27,6 +30,13 @@ set(SOURCES
     ui/RoutesTab.cpp
     ui/HistoryTab.cpp
     ui/NetworkPerfTab.cpp
+    ui/delegates/ProtoBadgeDelegate.cpp
+    ui/delegates/StateBadgeDelegate.cpp
+    ui/delegates/RateBarDelegate.cpp
+    ui/delegates/TtlBarDelegate.cpp
+    ui/delegates/MonoDelegate.cpp
+    ui/delegates/ColorTextDelegate.cpp
+    ui/delegates/PerfBarDelegate.cpp
 )
 
 add_executable(kernel_traffic_analyzer ${SOURCES})

@@ -1,8 +1,11 @@
 #pragma once
+
 #include <QWidget>
 #include "../core/HistoryDB.h"
+
+class BandwidthChart;
 class QAbstractTableModel;
-class QSpinBox;
+class QComboBox;
 
 class HistoryTab : public QWidget
 {
@@ -11,6 +14,7 @@ public:
     explicit HistoryTab(QWidget *parent = nullptr);
     void refresh();
 private:
-    QSpinBox *m_days = nullptr;
+    QComboBox *m_days = nullptr;
     QAbstractTableModel *m_processModel = nullptr;
+    BandwidthChart *m_chart = nullptr;
 };

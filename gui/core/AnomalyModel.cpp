@@ -1,4 +1,5 @@
 #include "AnomalyModel.h"
+#include "../ui/Style.h"
 #include <QBrush>
 #include <QDateTime>
 
@@ -22,8 +23,8 @@ QVariant AnomalyModel::data(const QModelIndex &index, int role) const
         default: return {};
         }
     }
-    if (role == Qt::BackgroundRole && (e.anomaly == "SYN_FLOOD" || e.anomaly == "PORT_SCAN")) return QBrush(QColor("#3a1f1f"));
-    if (role == Qt::ForegroundRole && index.column() == Type) return QBrush(QColor("#e05252"));
+    if (role == Qt::BackgroundRole && (e.anomaly == "SYN_FLOOD" || e.anomaly == "PORT_SCAN")) return QBrush(KtaColors::RedD);
+    if (role == Qt::ForegroundRole && index.column() == Type) return QBrush(KtaColors::Red);
     return {};
 }
 
