@@ -4,6 +4,8 @@
 #include <linux/uaccess.h>
 #include <linux/in.h>
 #include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/capability.h>
 #include "../include/traffic_analyzer.h"
 #include "../include/dns_map.h"
 #include "../include/route_store.h"
@@ -65,7 +67,14 @@ static const char *domain_for_entry(struct traffic_entry *e)
 static int conn_show(struct seq_file *m, void *v)
 {
     struct traffic_node *node;
+    struct traffic_entry *snap;
     u64 now = ktime_get_real_seconds();
+    unsigned int count = 0;
+    unsigned int i;
+
+    snap = kcalloc(MAX_TRAFFIC_ENTRIES, sizeof(*snap), GFP_KERNEL);
+    if (!snap)
+        return -ENOMEM;
 
     seq_puts(m,
              "PID|UID|PROCESS|RESOLVED|STATE|DNS|PROTO|"
@@ -78,7 +87,16 @@ static int conn_show(struct seq_file *m, void *v)
 
     list_for_each_entry(node, &traffic_list, list)
     {
-        struct traffic_entry *e = &node->entry;
+        if (count >= MAX_TRAFFIC_ENTRIES)
+            break;
+        snap[count++] = node->entry;
+    }
+
+    spin_unlock_bh(&stats_lock);
+
+    for (i = 0; i < count; i++)
+    {
+        struct traffic_entry *e = &snap[i];
         u64 duration = now - e->first_seen;
 
         seq_printf(m,
@@ -102,7 +120,7 @@ static int conn_show(struct seq_file *m, void *v)
                    duration, e->closed_at);
     }
 
-    spin_unlock_bh(&stats_lock);
+    kfree(snap);
     return 0;
 }
 
@@ -297,6 +315,8 @@ static ssize_t ta_write(struct file *file,
 
     if (count == 0)
         return 0;
+    if (!capable(CAP_NET_ADMIN))
+        return -EPERM;
 
     /* Cap at 64 KB — enough for a full traceroute batch */
     if (count > 65536)
@@ -427,19 +447,19 @@ static const struct proc_ops routes_pending_fops = MAKE_FOPS(routes_pending_open
  * ================================================================ */
 int proc_fs_init(void)
 {
-    if (!proc_create(PROC_CONNECTIONS, 0666, NULL, &conn_fops))
+    if (!proc_create(PROC_CONNECTIONS, 0600, NULL, &conn_fops))
         goto fail_conn;
-    if (!proc_create(PROC_PROCESSES, 0666, NULL, &proc_fops))
+    if (!proc_create(PROC_PROCESSES, 0600, NULL, &proc_fops))
         goto fail_proc;
-    if (!proc_create(PROC_DNS_FLOWS, 0666, NULL, &dns_fops))
+    if (!proc_create(PROC_DNS_FLOWS, 0600, NULL, &dns_fops))
         goto fail_dns;
-    if (!proc_create(PROC_ANOMALIES, 0666, NULL, &anomaly_fops))
+    if (!proc_create(PROC_ANOMALIES, 0600, NULL, &anomaly_fops))
         goto fail_anomaly;
-    if (!proc_create(PROC_DNS_MAP, 0666, NULL, &dns_map_fops))
+    if (!proc_create(PROC_DNS_MAP, 0600, NULL, &dns_map_fops))
         goto fail_dns_map;
-    if (!proc_create(PROC_ROUTES, 0666, NULL, &routes_fops))
+    if (!proc_create(PROC_ROUTES, 0600, NULL, &routes_fops))
         goto fail_routes;
-    if (!proc_create(PROC_ROUTES_PENDING, 0444, NULL, &routes_pending_fops))
+    if (!proc_create(PROC_ROUTES_PENDING, 0600, NULL, &routes_pending_fops))
         goto fail_routes_pending;
 
     return 0;
