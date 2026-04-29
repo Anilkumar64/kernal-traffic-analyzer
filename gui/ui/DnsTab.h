@@ -1,8 +1,10 @@
 #pragma once
 #include <QWidget>
-#include <QTableWidget>
-#include <QLabel>
 #include "../core/DnsEntry.h"
+class DnsModel;
+class QLineEdit;
+class QSortFilterProxyModel;
+class QTableView;
 
 class DnsTab : public QWidget
 {
@@ -11,6 +13,6 @@ public:
     explicit DnsTab(QWidget *parent = nullptr);
     void updateData(const QVector<DnsEntry> &entries);
 private:
-    QTableWidget *m_table;
-    QLabel       *m_countLabel;
+    DnsModel *m_model = nullptr;
+    QSortFilterProxyModel *m_proxy = nullptr;
 };

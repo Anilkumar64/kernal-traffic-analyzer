@@ -14,8 +14,7 @@ traffic_analyzer-objs := \
     src/exe_resolver.o     \
     src/dns_map.o          \
     src/dns_parser.o       \
-    src/route_store.o      \
-    src/netlink_comm.o
+    src/route_store.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 

@@ -8,7 +8,6 @@
 #include <linux/inet.h>
 #include <linux/mutex.h>
 #include "../include/route_store.h"
-#include "../include/netlink_comm.h"
 
 static DEFINE_HASHTABLE(route_table, ROUTE_STORE_BITS);
 static DEFINE_SPINLOCK(route_lock);
@@ -247,30 +246,6 @@ int route_store_write(const char *buf, size_t len)
                     e->status = status;
                     e->last_updated = now;
 
-                    if (status == ROUTE_STATUS_DONE)
-                    {
-                        /* Heap-allocate snap — route_entry is too large for
-                         * the stack (contains MAX_HOPS route_hop structs). */
-                        struct route_entry *snap = kmalloc(sizeof(*snap), GFP_ATOMIC);
-                        if (snap)
-                        {
-                            e = __find_entry(cur_ip);
-                            if (e)
-                                *snap = *e;
-                            else
-                            {
-                                kfree(snap);
-                                snap = NULL;
-                            }
-                        }
-                        spin_unlock(&route_lock);
-                        if (snap)
-                        {
-                            ta_nl_send_route(snap);
-                            kfree(snap);
-                        }
-                        spin_lock(&route_lock);
-                    }
                 }
             }
             spin_unlock(&route_lock);

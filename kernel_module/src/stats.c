@@ -8,7 +8,6 @@
 #include "../include/traffic_analyzer.h"
 #include "../include/dns_map.h"
 #include "../include/route_store.h"
-#include "../include/netlink_comm.h" /* PHASE 6 */
 
 /* ================================================================
  * GLOBALS
@@ -27,36 +26,6 @@ static struct
     struct velocity vel;
 } vel_save[MAX_PROC_ENTRIES];
 
-/*
- * PHASE 6: Update throttle tracking.
- * We don't want to send a netlink CONN_UPDATE on every single packet
- * — that would flood subscribers on high-bandwidth connections.
- * Instead we send an update when:
- *   a) rate changed by more than UPDATE_RATE_THRESHOLD percent, OR
- *   b) UPDATE_MAX_INTERVAL seconds have elapsed since last update
- */
-#define UPDATE_RATE_THRESHOLD 10 /* percent change to trigger update */
-#define UPDATE_MAX_INTERVAL 5    /* seconds between forced updates   */
-
-enum pending_nl_type
-{
-    PENDING_NL_CONN_NEW,
-    PENDING_NL_CONN_UPDATE,
-    PENDING_NL_CONN_CLOSED,
-    PENDING_NL_ANOMALY,
-};
-
-struct pending_nl_event
-{
-    struct list_head list;
-    enum pending_nl_type type;
-    union
-    {
-        struct traffic_entry conn;
-        struct proc_entry proc;
-    } u;
-};
-
 struct pending_route_request
 {
     struct list_head list;
@@ -67,33 +36,14 @@ struct pending_route_request
 
 struct pending_events
 {
-    struct list_head nl_events;
     struct list_head route_requests;
     struct list_head expired_closed;
 };
 
 static void pending_events_init(struct pending_events *events)
 {
-    INIT_LIST_HEAD(&events->nl_events);
     INIT_LIST_HEAD(&events->route_requests);
     INIT_LIST_HEAD(&events->expired_closed);
-}
-
-static void queue_nl_event(struct pending_events *events,
-                           struct pending_nl_event *event,
-                           enum pending_nl_type type,
-                           const struct traffic_entry *conn,
-                           const struct proc_entry *proc)
-{
-    if (!event)
-        return;
-
-    event->type = type;
-    if (conn)
-        event->u.conn = *conn;
-    if (proc)
-        event->u.proc = *proc;
-    list_add_tail(&event->list, &events->nl_events);
 }
 
 static void queue_route_request(struct pending_events *events,
@@ -115,35 +65,12 @@ static void queue_route_request(struct pending_events *events,
 
 static void flush_pending_events(struct pending_events *events)
 {
-    struct pending_nl_event *event, *event_tmp;
     struct pending_route_request *request, *request_tmp;
     struct traffic_node *closed, *closed_tmp;
-
-    list_for_each_entry_safe(event, event_tmp, &events->nl_events, list)
-    {
-        list_del(&event->list);
-        switch (event->type)
-        {
-        case PENDING_NL_CONN_NEW:
-            ta_nl_send_conn_new(&event->u.conn);
-            break;
-        case PENDING_NL_CONN_UPDATE:
-            ta_nl_send_conn_update(&event->u.conn);
-            break;
-        case PENDING_NL_CONN_CLOSED:
-            ta_nl_send_conn_closed(&event->u.conn);
-            break;
-        case PENDING_NL_ANOMALY:
-            ta_nl_send_anomaly(&event->u.proc);
-            break;
-        }
-        kfree(event);
-    }
 
     list_for_each_entry_safe(closed, closed_tmp, &events->expired_closed, list)
     {
         list_del(&closed->list);
-        ta_nl_send_conn_closed(&closed->entry);
         kfree(closed);
     }
 
@@ -246,37 +173,6 @@ static void update_rate(struct traffic_entry *e, u64 now)
         r->bytes_out_last = e->bytes_out;
         r->bytes_in_last = e->bytes_in;
         r->window_start = now;
-    }
-}
-
-/* ================================================================
- * PHASE 6: SHOULD SEND UPDATE?
- *
- * Returns true if the connection state warrants a CONN_UPDATE
- * netlink message.  Throttles by rate change % and time elapsed.
- * ================================================================ */
-static bool should_send_update(struct traffic_entry *e, u64 now)
-{
-    u32 old_rate = e->nl_last_rate_out + e->nl_last_rate_in;
-    u32 new_rate = e->rate.rate_out_bps + e->rate.rate_in_bps;
-    u64 elapsed = now - e->nl_last_update;
-
-    /* Force update every UPDATE_MAX_INTERVAL seconds */
-    if (elapsed >= UPDATE_MAX_INTERVAL)
-        return true;
-
-    /* Skip if no traffic at all */
-    if (old_rate == 0 && new_rate == 0)
-        return false;
-
-    /* Send if rate changed by more than threshold */
-    if (old_rate == 0)
-        return new_rate > 0;
-
-    {
-        u32 diff = new_rate > old_rate ? new_rate - old_rate : old_rate - new_rate;
-        u32 change_pct = diff * 100 / old_rate;
-        return change_pct >= UPDATE_RATE_THRESHOLD;
     }
 }
 
@@ -420,11 +316,7 @@ static void update_top_conns(struct proc_entry *pe,
 /* ================================================================
  * REBUILD PROC LIST
  * ================================================================ */
-static void rebuild_proc_list_locked(u64 now,
-                                     struct pending_events *events,
-                                     struct pending_nl_event **event_slots,
-                                     int *event_slot_idx,
-                                     int event_slot_count)
+static void rebuild_proc_list_locked(u64 now)
 {
     struct traffic_node *tnode;
     struct proc_node *pnode, *ptmp;
@@ -521,8 +413,6 @@ static void rebuild_proc_list_locked(u64 now,
     list_for_each_entry(pnode, &proc_list, list)
     {
         struct proc_entry *pe = &pnode->entry;
-        u8 old_flags = pe->anomaly_flags;
-
         if (pe->total_conns > 0)
         {
             pe->tcp_pct = (u8)((pe->tcp_conns * 100) / pe->total_conns);
@@ -530,16 +420,6 @@ static void rebuild_proc_list_locked(u64 now,
         }
 
         pe->anomaly_flags = detect_anomalies(pe);
-
-        if (pe->anomaly_flags != ANOMALY_NONE &&
-            pe->anomaly_flags != old_flags)
-        {
-            if (*event_slot_idx < event_slot_count)
-            {
-                queue_nl_event(events, event_slots[(*event_slot_idx)++],
-                               PENDING_NL_ANOMALY, NULL, pe);
-            }
-        }
     }
 }
 
@@ -564,10 +444,8 @@ void stats_update(pid_t pid,
     struct traffic_node *node;
     u64 now = ktime_get_real_seconds();
     struct pending_events events;
-    struct pending_nl_event *event_slots[3] = {NULL, NULL, NULL};
     struct pending_route_request *route_slot = NULL;
     struct traffic_node *new_node = NULL;
-    int event_slot_idx = 0;
     bool dns_flag = is_internal_dns(dest_ip, dest_port) ||
                     is_internal_dns(src_ip, src_port);
 
@@ -581,9 +459,6 @@ void stats_update(pid_t pid,
 
     pending_events_init(&events);
 
-    event_slots[0] = kmalloc(sizeof(*event_slots[0]), GFP_ATOMIC);
-    event_slots[1] = kmalloc(sizeof(*event_slots[1]), GFP_ATOMIC);
-    event_slots[2] = kmalloc(sizeof(*event_slots[2]), GFP_ATOMIC);
     route_slot = kmalloc(sizeof(*route_slot), GFP_ATOMIC);
     new_node = kmalloc(sizeof(*new_node), GFP_ATOMIC);
 
@@ -606,8 +481,7 @@ void stats_update(pid_t pid,
             }
         }
 
-        rebuild_proc_list_locked(now, &events, event_slots, &event_slot_idx,
-                                 ARRAY_SIZE(event_slots));
+        rebuild_proc_list_locked(now);
         last_cleanup = now;
     }
 
@@ -637,7 +511,6 @@ void stats_update(pid_t pid,
 
         update_rate(e, now);
 
-        enum conn_state old_state = e->state;
         advance_state(e, state, incoming);
 
         if (is_resolved && !e->is_resolved)
@@ -658,32 +531,6 @@ void stats_update(pid_t pid,
             queue_route_request(&events, route_slot, remote_ip,
                                 e->domain[0] ? e->domain : NULL);
             route_slot = NULL;
-        }
-
-        /*
-         * PHASE 6: Emit netlink events on state transitions.
-         *
-         * CONN_CLOSED: emitted immediately when state changes to
-         *              CLOSED so GUI can update instantly.
-         *
-         * CONN_UPDATE: throttled — only when rate changed
-         *              significantly or interval elapsed.
-         */
-        if (e->state == CONN_STATE_CLOSED &&
-            old_state != CONN_STATE_CLOSED)
-        {
-            if (event_slot_idx < ARRAY_SIZE(event_slots))
-                queue_nl_event(&events, event_slots[event_slot_idx++],
-                               PENDING_NL_CONN_CLOSED, e, NULL);
-        }
-        else if (should_send_update(e, now))
-        {
-            e->nl_last_rate_out = e->rate.rate_out_bps;
-            e->nl_last_rate_in = e->rate.rate_in_bps;
-            e->nl_last_update = now;
-            if (event_slot_idx < ARRAY_SIZE(event_slots))
-                queue_nl_event(&events, event_slots[event_slot_idx++],
-                               PENDING_NL_CONN_UPDATE, e, NULL);
         }
 
         if (is_new_conn && !dns_flag)
@@ -735,7 +582,6 @@ void stats_update(pid_t pid,
     node->entry.src_port = c_src_port;
     node->entry.dest_port = c_dst_port;
     node->entry.route_requested = false;
-    node->entry.nl_last_update = now;
 
     dns_map_lookup(c_dst_ip, node->entry.domain, DOMAIN_NAME_MAX);
 
@@ -757,10 +603,6 @@ void stats_update(pid_t pid,
     INIT_LIST_HEAD(&node->list);
     list_add_tail(&node->list, &traffic_list);
     traffic_entries++;
-
-    if (event_slot_idx < ARRAY_SIZE(event_slots))
-        queue_nl_event(&events, event_slots[event_slot_idx++],
-                       PENDING_NL_CONN_NEW, &node->entry, NULL);
 
     /* Route request */
     if (!dns_flag && protocol == IPPROTO_TCP)
@@ -791,8 +633,6 @@ out_unlock:
     spin_unlock_bh(&stats_lock);
     flush_pending_events(&events);
 
-    while (event_slot_idx < ARRAY_SIZE(event_slots))
-        kfree(event_slots[event_slot_idx++]);
     kfree(route_slot);
     kfree(new_node);
 }

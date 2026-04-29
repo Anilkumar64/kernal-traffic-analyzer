@@ -331,7 +331,7 @@ void resolver_schedule(unsigned long ino, struct sock *sk, struct file *file)
 }
 
 /* ================================================================
- * PHASE 3: EXE RESOLVE WORK ITEM
+ * EXE RESOLVE WORK ITEM
  *
  * Reads the full executable path for a PID from process context
  * (d_path can sleep) and inserts into exe_cache.

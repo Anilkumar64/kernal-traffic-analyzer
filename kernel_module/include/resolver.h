@@ -12,7 +12,7 @@ pid_t resolve_pid_from_inode(unsigned long ino);
 void resolver_schedule(unsigned long ino, struct sock *sk,
                        struct file *file);
 
-/* PHASE 3: Schedule async exe path resolution */
+/* Schedule async exe path resolution */
 void resolver_schedule_exe(pid_t pid);
 
 void resolver_init(void);

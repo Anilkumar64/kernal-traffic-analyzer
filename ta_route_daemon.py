@@ -1,577 +1,191 @@
 #!/usr/bin/env python3
-"""
-ta_route_daemon.py — TCP Traceroute + GeoIP Route Enrichment Daemon
-Kernel Traffic Analyzer (KTA) v6.0
+"""Poll KTA route requests, run TCP traceroute, and write hop data to /proc."""
 
-Polls /proc/traffic_analyzer_routes_pending every 2 seconds.
-For each pending IP it runs:
-    traceroute -T -p 443 -n -q 1 -w 2 <ip>
-Enriches each hop with MaxMind GeoLite2 City + ASN data.
-Writes results to /proc/traffic_analyzer_routes.
-
-/proc column contract (15 cols per hop, space-separated):
-  0=DEST_IP  1=DOMAIN      2=STATUS    3=TOTAL_HOPS  4=HOP_N
-  5=HOP_IP   6=HOST        7=RTT_MS    8=CITY         9=COUNTRY
-  10=CC      11=LAT_E6     12=LON_E6   13=ASN         14=ORG
-
-LAT_E6 / LON_E6 = degrees × 1_000_000  (integer, no decimal point)
-"""
+from __future__ import annotations
 
 import argparse
 import ipaddress
 import logging
-import os
 import re
-import signal
 import subprocess
-import sys
 import time
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Iterable
 
-# Kernel proc write protocol:
-# DEST <ip>
-# HOP <n> <hop_ip> <rtt_us> <host> <city> <country> <cc> <lat_e6> <lon_e6> <asn> <org>
-# STATUS <DONE|FAILED|RUNNING>
+PROC_PENDING = Path("/proc/traffic_analyzer_routes_pending")
+PROC_ROUTES = Path("/proc/traffic_analyzer_routes")
 
-# ── GeoIP2 ────────────────────────────────────────────────────────────────────
 try:
     import geoip2.database
     import geoip2.errors
-    GEOIP_AVAILABLE = True
 except ImportError:
-    GEOIP_AVAILABLE = False
-    print("[WARN] geoip2 not installed — run: pip install geoip2 --break-system-packages",
-          file=sys.stderr)
-
-# ── /proc paths ───────────────────────────────────────────────────────────────
-PROC_PENDING = "/proc/traffic_analyzer_routes_pending"
-PROC_ROUTES  = "/proc/traffic_analyzer_routes"
-
-# ── MaxMind DB paths ──────────────────────────────────────────────────────────
-GEOIP_CITY_DB = "/usr/share/GeoIP/GeoLite2-City.mmdb"
-GEOIP_ASN_DB  = "/usr/share/GeoIP/GeoLite2-ASN.mmdb"
-
-# ── Tunables ──────────────────────────────────────────────────────────────────
-POLL_INTERVAL_S   = 2       # seconds between pending-queue checks
-TRACEROUTE_HOPS   = 20      # -m (max hops)
-TRACEROUTE_QUERIES= 1       # -q (queries per hop) — keep fast
-TRACEROUTE_WAIT_S = 2       # -w (probe timeout seconds)
-TRACEROUTE_PORT   = 443     # -p (TCP SYN port, works through NAT)
-MAX_CONCURRENT    = 8       # never trace more than this many IPs at once
-RETRY_LIMIT       = 2       # retry failed traces this many times
-COMPLETED_TTL_S   = 120     # forget a completed IP after this many seconds
-FIELD_SEP         = " "     # column separator written to /proc
-UNKNOWN           = "?"     # placeholder for unknown fields
-
-# ── Logging ───────────────────────────────────────────────────────────────────
-log = logging.getLogger("kta.route_daemon")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# IP helpers
-# ──────────────────────────────────────────────────────────────────────────────
-
-_PRIVATE_NETWORKS = [
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fc00::/7"),
-    ipaddress.ip_network("fe80::/10"),
-    ipaddress.ip_network("100.64.0.0/10"),   # carrier-grade NAT
-    ipaddress.ip_network("169.254.0.0/16"),  # link-local
-]
+    geoip2 = None  # type: ignore[assignment]
 
 
-def is_routable(ip_str: str) -> bool:
-    """Return True only if the IP is a globally routable unicast address."""
+@dataclass(frozen=True)
+class PendingRoute:
+    ip: str
+    domain: str
+
+
+@dataclass(frozen=True)
+class Hop:
+    number: int
+    ip: str
+    rtt_us: int
+    host: str = "-"
+    city: str = "-"
+    country: str = "-"
+    country_code: str = "-"
+    lat_e6: int = 0
+    lon_e6: int = 0
+    asn: str = "-"
+    org: str = "-"
+
+
+class GeoIp:
+    def __init__(self, city_db: Path | None, asn_db: Path | None) -> None:
+        self.city = self._open(city_db)
+        self.asn = self._open(asn_db)
+
+    @staticmethod
+    def _open(path: Path | None):
+        if geoip2 is None or path is None or not path.exists():
+            return None
+        return geoip2.database.Reader(str(path))
+
+    def enrich(self, hop: Hop) -> Hop:
+        if hop.ip == "*" or not self.city and not self.asn:
+            return hop
+
+        city = country = country_code = asn = org = "-"
+        lat_e6 = lon_e6 = 0
+        if self.city:
+            try:
+                rec = self.city.city(hop.ip)
+                city = clean_field(rec.city.name or "-")
+                country = clean_field(rec.country.name or "-")
+                country_code = clean_field(rec.country.iso_code or "-")
+                if rec.location.latitude is not None:
+                    lat_e6 = int(rec.location.latitude * 1_000_000)
+                if rec.location.longitude is not None:
+                    lon_e6 = int(rec.location.longitude * 1_000_000)
+            except (geoip2.errors.AddressNotFoundError, ValueError):
+                pass
+        if self.asn:
+            try:
+                rec = self.asn.asn(hop.ip)
+                asn = f"AS{rec.autonomous_system_number}"
+                org = clean_field(rec.autonomous_system_organization or "-")
+            except (geoip2.errors.AddressNotFoundError, ValueError):
+                pass
+
+        return Hop(hop.number, hop.ip, hop.rtt_us, hop.host, city, country,
+                   country_code, lat_e6, lon_e6, asn, org)
+
+def clean_field(value: str) -> str:
+    return value.strip().replace(" ", "_").replace("\t", "_") or "-"
+
+def is_routable(ip: str) -> bool:
     try:
-        addr = ipaddress.ip_address(ip_str)
+        addr = ipaddress.ip_address(ip)
     except ValueError:
         return False
-    if addr.is_loopback or addr.is_link_local or addr.is_multicast:
-        return False
-    for net in _PRIVATE_NETWORKS:
-        try:
-            if addr in net:
-                return False
-        except TypeError:
-            pass
-    return True
+    return bool(addr.is_global)
 
-
-def sanitise(value: str) -> str:
-    """Strip whitespace and replace spaces/tabs inside a field with '_'."""
-    return value.strip().replace(" ", "_").replace("\t", "_") or UNKNOWN
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# GeoIP wrapper
-# ──────────────────────────────────────────────────────────────────────────────
-
-class GeoIPReader:
-    """Thin wrapper around two MaxMind readers; handles missing DB gracefully."""
-
-    def __init__(self, city_path: str, asn_path: str) -> None:
-        self._city: Optional["geoip2.database.Reader"] = None
-        self._asn:  Optional["geoip2.database.Reader"] = None
-
-        if not GEOIP_AVAILABLE:
-            log.warning("geoip2 module not available — geo enrichment disabled")
-            return
-
-        for attr, path, label in (
-            ("_city", city_path, "City"),
-            ("_asn",  asn_path,  "ASN"),
-        ):
-            if Path(path).exists():
-                try:
-                    setattr(self, attr, geoip2.database.Reader(path))
-                    log.info("Loaded GeoLite2-%s from %s", label, path)
-                except Exception as exc:
-                    log.warning("Cannot open %s: %s", path, exc)
-            else:
-                log.warning("GeoLite2-%s not found at %s", label, path)
-
-    def lookup(self, ip_str: str) -> dict:
-        """Return a dict with city, country, cc, lat_e6, lon_e6, asn, org."""
-        result = {
-            "city":    UNKNOWN,
-            "country": UNKNOWN,
-            "cc":      UNKNOWN,
-            "lat_e6":  0,
-            "lon_e6":  0,
-            "asn":     0,
-            "org":     UNKNOWN,
-        }
-
-        if not is_routable(ip_str):
-            result["city"] = "Private"
-            return result
-
-        # City / country / coords
-        if self._city:
-            try:
-                rec = self._city.city(ip_str)
-                if rec.city.name:
-                    result["city"] = sanitise(rec.city.name)
-                if rec.country.name:
-                    result["country"] = sanitise(rec.country.name)
-                if rec.country.iso_code:
-                    result["cc"] = rec.country.iso_code
-                if rec.location.latitude is not None:
-                    result["lat_e6"] = int(rec.location.latitude  * 1_000_000)
-                    result["lon_e6"] = int(rec.location.longitude * 1_000_000)
-            except (geoip2.errors.AddressNotFoundError, Exception):
-                pass
-
-        # ASN / org
-        if self._asn:
-            try:
-                rec = self._asn.asn(ip_str)
-                result["asn"] = rec.autonomous_system_number or 0
-                if rec.autonomous_system_organization:
-                    result["org"] = sanitise(rec.autonomous_system_organization)
-            except (geoip2.errors.AddressNotFoundError, Exception):
-                pass
-
-        return result
-
-    def close(self) -> None:
-        for reader in (self._city, self._asn):
-            if reader:
-                try:
-                    reader.close()
-                except Exception:
-                    pass
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Traceroute parser
-# ──────────────────────────────────────────────────────────────────────────────
-
-# Matches lines like:
-#  " 3  203.0.113.1  12.345 ms"
-#  " 5  * * *"
-_HOP_RE = re.compile(
-    r"^\s*(\d+)\s+"           # hop number
-    r"([\d.]+|\*)"            # IP or '*'
-    r"(?:\s+([\d.]+)\s*ms)?"  # optional RTT
-)
-
-
-def run_traceroute(dest_ip: str, verbose: bool = False) -> list[dict]:
-    """
-    Execute traceroute and return a list of hop dicts:
-        { hop_n, hop_ip, rtt_ms }
-    Hops with no response are represented with hop_ip="*" rtt_ms=0.
-    """
-    cmd = [
-        "traceroute",
-        "-T",                          # TCP SYN (works through NAT/mobile hotspot)
-        f"-p{TRACEROUTE_PORT}",        # destination port
-        f"-m{TRACEROUTE_HOPS}",        # max hops
-        f"-q{TRACEROUTE_QUERIES}",     # probes per hop
-        f"-w{TRACEROUTE_WAIT_S}",      # wait per probe
-        "-n",                          # no reverse DNS (we do our own mapping)
-        dest_ip,
-    ]
-
-    if verbose:
-        log.debug("Running: %s", " ".join(cmd))
-
-    hops: list[dict] = []
+def read_pending(path: Path = PROC_PENDING) -> list[PendingRoute]:
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=TRACEROUTE_HOPS * (TRACEROUTE_WAIT_S + 1) + 5,
-        )
-        output = proc.stdout
-        if verbose and proc.stderr:
-            log.debug("traceroute stderr: %s", proc.stderr.strip())
-    except subprocess.TimeoutExpired:
-        log.warning("traceroute timed out for %s", dest_ip)
-        return hops
-    except FileNotFoundError:
-        log.error("traceroute binary not found — install: sudo apt install traceroute")
-        return hops
-    except Exception as exc:
-        log.error("traceroute failed for %s: %s", dest_ip, exc)
-        return hops
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        logging.debug("cannot read %s: %s", path, exc)
+        return []
 
-    for line in output.splitlines():
-        m = _HOP_RE.match(line)
-        if not m:
+    routes: list[PendingRoute] = []
+    for line in lines:
+        parts = line.split(maxsplit=1)
+        if not parts or not is_routable(parts[0]):
             continue
-        hop_n  = int(m.group(1))
-        hop_ip = m.group(2)           # may be "*"
-        rtt_s  = m.group(3)
-        rtt_ms = float(rtt_s) if rtt_s else 0.0
-        hops.append({"hop_n": hop_n, "hop_ip": hop_ip, "rtt_ms": rtt_ms})
+        routes.append(PendingRoute(parts[0], parts[1] if len(parts) > 1 else "-"))
+    return routes
 
+def run_traceroute(ip: str) -> str | None:
+    cmd = ["traceroute", "-T", "-p", "443", "-n", "-q", "1", "-w", "2", "-m", "32", ip]
+    try:
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=70)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logging.debug("traceroute failed for %s: %s", ip, exc)
+        return None
+    if result.returncode not in (0, 1):
+        logging.debug("traceroute returned %s for %s: %s", result.returncode, ip, result.stderr)
+        return None
+    return result.stdout
+
+def parse_hops(output: str) -> list[Hop]:
+    hops: list[Hop] = []
+    line_re = re.compile(r"^\s*(\d+)\s+(.+)$")
+    ip_re = re.compile(r"(\d{1,3}(?:\.\d{1,3}){3})")
+    rtt_re = re.compile(r"(\d+(?:\.\d+)?)\s*ms")
+
+    for line in output.splitlines()[1:]:
+        match = line_re.match(line)
+        if not match:
+            continue
+        number = int(match.group(1))
+        rest = match.group(2)
+        if "*" in rest and not ip_re.search(rest):
+            hops.append(Hop(number, "*", 0))
+            continue
+        ip_match = ip_re.search(rest)
+        rtt_match = rtt_re.search(rest)
+        if not ip_match:
+            continue
+        rtt_us = int(float(rtt_match.group(1)) * 1000) if rtt_match else 0
+        ip = ip_match.group(1)
+        hops.append(Hop(number, ip, rtt_us, ip))
     return hops
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# /proc interface
-# ──────────────────────────────────────────────────────────────────────────────
-
-def read_pending() -> list[tuple[str, str]]:
-    """
-    Read /proc/traffic_analyzer_routes_pending.
-    Each line: <dest_ip> <domain>
-    Returns list of (dest_ip, domain) tuples.
-    """
-    entries: list[tuple[str, str]] = []
-    try:
-        with open(PROC_PENDING, "r") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                parts = line.split()
-                if len(parts) >= 2:
-                    entries.append((parts[0], parts[1]))
-                elif len(parts) == 1:
-                    entries.append((parts[0], UNKNOWN))
-    except FileNotFoundError:
-        log.error("%s not found — is the kernel module loaded?", PROC_PENDING)
-    except PermissionError:
-        log.error("Permission denied reading %s — run as root", PROC_PENDING)
-    except Exception as exc:
-        log.error("Error reading pending queue: %s", exc)
-    return entries
-
-
-def write_route(dest_ip: str, domain: str, hops: list[dict],
-                geo: GeoIPReader, status: str = "OK") -> None:
-    """
-    Write one route (all its hops) to /proc/traffic_analyzer_routes.
-
-    Each hop line is exactly 15 space-separated columns:
-      DEST_IP DOMAIN STATUS TOTAL_HOPS HOP_N
-      HOP_IP  HOST   RTT_MS CITY       COUNTRY
-      CC      LAT_E6 LON_E6 ASN        ORG
-    """
-    total_hops = len(hops)
-    lines: list[str] = [f"DEST {sanitise(dest_ip)}"]
-
-    if total_hops == 0:
-        lines.append("STATUS FAILED")
-        try:
-            with open(PROC_ROUTES, "w") as fh:
-                fh.write("\n".join(lines) + "\n")
-        except Exception as exc:
-            log.error("Failed to write route for %s: %s", dest_ip, exc)
-        return
-
+def route_payload(route: PendingRoute, hops: Iterable[Hop], status: str) -> str:
+    lines = [f"DEST {route.ip}"]
     for hop in hops:
-        hop_ip  = hop["hop_ip"]
-        rtt_ms  = hop["rtt_ms"]
-        hop_n   = hop["hop_n"]
+        lines.append(
+            "HOP "
+            f"{hop.number} {hop.ip} {hop.rtt_us} {clean_field(hop.host)} "
+            f"{hop.city} {hop.country} {hop.country_code} {hop.lat_e6} {hop.lon_e6} "
+            f"{hop.asn} {hop.org}"
+        )
+    lines.append(f"STATUS {status}")
+    return "\n".join(lines) + "\n"
 
-        if hop_ip == "*" or not is_routable(hop_ip):
-            # Non-responsive or private hop — zero out geo fields
-            geo_data = {
-                "city":    UNKNOWN,
-                "country": UNKNOWN,
-                "cc":      UNKNOWN,
-                "lat_e6":  0,
-                "lon_e6":  0,
-                "asn":     0,
-                "org":     UNKNOWN,
-            }
-        else:
-            geo_data = geo.lookup(hop_ip)
-
-        cols = [
-            "HOP",
-            str(hop_n),
-            hop_ip if hop_ip != "*" else UNKNOWN,
-            UNKNOWN,                        # HOST — kernel does reverse DNS itself
-            str(int(rtt_ms * 1000)),
-            geo_data["city"],
-            geo_data["country"],
-            geo_data["cc"],
-            str(geo_data["lat_e6"]),
-            str(geo_data["lon_e6"]),
-            str(geo_data["asn"]),
-            geo_data["org"],
-        ]
-        lines.append(FIELD_SEP.join(cols))
-
-    lines.append("STATUS DONE" if status == "OK" else "STATUS FAILED")
-
+def write_route(payload: str, path: Path = PROC_ROUTES) -> None:
     try:
-        with open(PROC_ROUTES, "w") as fh:
-            fh.write("\n".join(lines) + "\n")
-        log.debug("Wrote %d hop(s) for %s", total_hops, dest_ip)
-    except Exception as exc:
-        log.error("Failed to write route for %s: %s", dest_ip, exc)
+        path.write_text(payload, encoding="utf-8")
+    except OSError as exc:
+        logging.debug("cannot write %s: %s", path, exc)
 
+def trace_route(route: PendingRoute, geo: GeoIp) -> None:
+    output = run_traceroute(route.ip)
+    if output is None:
+        return
+    hops = [geo.enrich(hop) for hop in parse_hops(output)]
+    write_route(route_payload(route, hops, "DONE" if hops else "FAILED"))
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Main daemon loop
-# ──────────────────────────────────────────────────────────────────────────────
-
-class RouteDaemon:
-    def __init__(self, verbose: bool = False) -> None:
-        self.verbose    = verbose
-        self.geo        = GeoIPReader(GEOIP_CITY_DB, GEOIP_ASN_DB)
-        self._running   = True
-        self._in_flight: set[str] = set()    # IPs currently being traced
-        # completed cache: ip -> expiry timestamp  (avoid re-tracing)
-        self._completed: dict[str, float] = {}
-        # retry counter: ip -> attempt count
-        self._retries:   dict[str, int]   = {}
-        self._lock = threading.Lock()
-        self._executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT)
-        self._futures = {}
-
-        signal.signal(signal.SIGINT,  self._handle_signal)
-        signal.signal(signal.SIGTERM, self._handle_signal)
-
-    def _handle_signal(self, signum, frame) -> None:
-        log.info("Signal %d received — shutting down", signum)
-        self._running = False
-
-    def _is_completed(self, ip: str) -> bool:
-        exp = self._completed.get(ip)
-        if exp is None:
-            return False
-        if time.monotonic() > exp:
-            del self._completed[ip]
-            return False
-        return True
-
-    def _mark_completed(self, ip: str) -> None:
-        self._completed[ip] = time.monotonic() + COMPLETED_TTL_S
-
-    def _expire_completed_cache(self) -> None:
-        now = time.monotonic()
-        expired = [ip for ip, exp in self._completed.items() if now > exp]
-        for ip in expired:
-            del self._completed[ip]
-
-    def process_ip(self, dest_ip: str, domain: str) -> tuple[str, str, list[dict], int]:
-        """Trace one IP and return the result for the main thread to commit."""
-        log.info("Tracing %s (%s) …", dest_ip, domain)
-
-        attempt = self._retries.get(dest_ip, 0) + 1
-        self._retries[dest_ip] = attempt
-
-        hops = run_traceroute(dest_ip, verbose=self.verbose)
-        return dest_ip, domain, hops, attempt
-
-    def _complete_future(self, future) -> None:
-        dest_ip = None
-        try:
-            dest_ip, domain, hops, attempt = future.result()
-        except Exception as exc:
-            log.error("Route worker failed: %s", exc)
-            return
-        finally:
-            with self._lock:
-                for ip, fut in list(self._futures.items()):
-                    if fut is future:
-                        dest_ip = ip
-                        del self._futures[ip]
-                        self._in_flight.discard(ip)
-                        break
-
-        if dest_ip is None:
-            return
-
-        if hops:
-            write_route(dest_ip, domain, hops, self.geo, status="OK")
-            self._mark_completed(dest_ip)
-            self._retries.pop(dest_ip, None)
-            log.info("Route for %s: %d hop(s)", dest_ip, len(hops))
-        else:
-            if attempt >= RETRY_LIMIT:
-                log.warning("No route for %s after %d attempt(s)", dest_ip, attempt)
-                write_route(dest_ip, domain, [], self.geo, status="FAIL")
-                self._mark_completed(dest_ip)
-                self._retries.pop(dest_ip, None)
-            else:
-                log.debug("No hops for %s — will retry (attempt %d/%d)",
-                          dest_ip, attempt, RETRY_LIMIT)
-
-    def run(self) -> None:
-        log.info("KTA route daemon started (PID %d)", os.getpid())
-        log.info("Polling %s every %ds", PROC_PENDING, POLL_INTERVAL_S)
-
-        while self._running:
-            self._expire_completed_cache()
-
-            with self._lock:
-                futures = list(self._futures.values())
-            try:
-                for future in as_completed(futures, timeout=0.05):
-                    self._complete_future(future)
-            except TimeoutError:
-                pass
-
-            pending = read_pending()
-            for dest_ip, domain in pending:
-                if not dest_ip or dest_ip == UNKNOWN:
-                    continue
-                if not is_routable(dest_ip):
-                    log.debug("Skipping non-routable %s", dest_ip)
-                    continue
-                if self._is_completed(dest_ip):
-                    log.debug("Already traced %s (cached)", dest_ip)
-                    continue
-                with self._lock:
-                    if dest_ip in self._in_flight:
-                        log.debug("Already in-flight: %s", dest_ip)
-                        continue
-                    if len(self._in_flight) >= MAX_CONCURRENT:
-                        log.debug("Concurrency limit reached (%d) — deferring %s",
-                                  MAX_CONCURRENT, dest_ip)
-                        break
-                    self._in_flight.add(dest_ip)
-                    self._futures[dest_ip] = self._executor.submit(
-                        self.process_ip, dest_ip, domain)
-
-            time.sleep(POLL_INTERVAL_S)
-
-        self._executor.shutdown(wait=True)
-        with self._lock:
-            remaining = list(self._futures.values())
-        for future in as_completed(remaining):
-            self._complete_future(future)
-        log.info("Route daemon stopped")
-        self.geo.close()
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Entry point
-# ──────────────────────────────────────────────────────────────────────────────
-
-def _check_prerequisites() -> bool:
-    ok = True
-
-    # Must be root to write /proc kernel files
-    if os.geteuid() != 0:
-        log.error("Must run as root (sudo)")
-        ok = False
-
-    # /proc files must exist — module must be loaded
-    for path in (PROC_PENDING, PROC_ROUTES):
-        if not Path(path).exists():
-            log.error("%s not found — load the kernel module first:", path)
-            log.error("  sudo insmod traffic_analyzer.ko")
-            ok = False
-
-    # traceroute binary
-    result = subprocess.run(["which", "traceroute"], capture_output=True, text=True)
-    if result.returncode != 0:
-        log.error("traceroute not found — install: sudo apt install traceroute")
-        ok = False
-
-    # geoip2 Python package
-    if not GEOIP_AVAILABLE:
-        log.warning("geoip2 not available — geo fields will be '?' (non-fatal)")
-
-    return ok
-
-
-def main() -> None:
-    # Declare globals before any reference to them in this function scope
-    global POLL_INTERVAL_S, GEOIP_CITY_DB, GEOIP_ASN_DB
-
-    parser = argparse.ArgumentParser(
-        description="KTA v6.0 — TCP traceroute + GeoIP route enrichment daemon"
-    )
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Enable debug logging",
-    )
-    parser.add_argument(
-        "--poll-interval",
-        type=float,
-        default=POLL_INTERVAL_S,
-        metavar="SECONDS",
-        help=f"Pending queue poll interval (default: {POLL_INTERVAL_S}s)",
-    )
-    parser.add_argument(
-        "--city-db",
-        default=GEOIP_CITY_DB,
-        metavar="PATH",
-        help=f"Path to GeoLite2-City.mmdb (default: {GEOIP_CITY_DB})",
-    )
-    parser.add_argument(
-        "--asn-db",
-        default=GEOIP_ASN_DB,
-        metavar="PATH",
-        help=f"Path to GeoLite2-ASN.mmdb (default: {GEOIP_ASN_DB})",
-    )
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Kernel Traffic Analyzer route daemon")
+    parser.add_argument("--poll-interval", type=float, default=2.0)
+    parser.add_argument("--city-db", type=Path)
+    parser.add_argument("--asn-db", type=Path)
+    parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
+    geo = GeoIp(args.city_db, args.asn_db)
 
-    # Apply CLI overrides to module-level config
-    POLL_INTERVAL_S = args.poll_interval
-    GEOIP_CITY_DB   = args.city_db
-    GEOIP_ASN_DB    = args.asn_db
-
-    if not _check_prerequisites():
-        sys.exit(1)
-
-    daemon = RouteDaemon(verbose=args.verbose)
-    daemon.run()
+    while True:
+        for route in read_pending():
+            trace_route(route, geo)
+        time.sleep(args.poll_interval)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

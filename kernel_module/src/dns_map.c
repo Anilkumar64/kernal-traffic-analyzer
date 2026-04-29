@@ -6,7 +6,6 @@
 #include <linux/timekeeping.h>
 #include <linux/string.h>
 #include "../include/dns_map.h"
-#include "../include/netlink_comm.h" /* PHASE 6 */
 
 static DEFINE_HASHTABLE(dns_table, DNS_MAP_BITS);
 static DEFINE_SPINLOCK(dns_lock);
@@ -42,9 +41,6 @@ void dns_map_insert(__be32 ip, const char *name, u32 ttl,
             strscpy(entry->queried_by_comm, comm, TASK_COMM_LEN);
 
         spin_unlock(&dns_lock);
-
-        /* PHASE 6: notify on update */
-        ta_nl_send_dns(ip, name, ttl, pid, comm);
         return;
     }
 
@@ -82,9 +78,6 @@ void dns_map_insert(__be32 ip, const char *name, u32 ttl,
     hash_add(dns_table, &entry->node, hash);
     spin_unlock(&dns_lock);
 
-notify:
-    /* PHASE 6: notify on new entry */
-    ta_nl_send_dns(ip, name, ttl, pid, comm);
 }
 
 bool dns_map_lookup(__be32 ip, char *buf, size_t bufsz)

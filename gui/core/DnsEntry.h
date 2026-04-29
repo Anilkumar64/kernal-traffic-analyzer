@@ -9,6 +9,7 @@ struct DnsEntry {
     QString queriedByComm;
     qint64  firstSeen = 0;
     qint64  lastSeen = 0;
+    int     queryCount = 1;
 
     QString ttlString() const {
         if (ttlRemaining <= 0) return "expired";

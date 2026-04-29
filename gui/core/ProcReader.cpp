@@ -2,6 +2,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QSet>
+#include <QDateTime>
 
 static QStringList splitLine(const QString &line) { return line.split('|'); }
 static void skipHeader(QTextStream &in)
@@ -172,6 +173,7 @@ QVector<DnsEntry> ProcReader::readDnsMap()
         e.queriedByComm = t[4];
         e.firstSeen = t[5].toLongLong();
         e.lastSeen = t[6].toLongLong();
+        e.queryCount = 1;
         r.append(e);
     }
     return r;
@@ -194,6 +196,7 @@ QVector<AnomalyEntry> ProcReader::readAnomalies()
         if (t.size() < 11)
             continue;
         AnomalyEntry e;
+        e.timestamp = QDateTime::currentSecsSinceEpoch();
         e.pid = t[0].toInt();
         e.uid = t[1].toInt();
         e.process = t[2];
@@ -234,6 +237,7 @@ QMap<QString, RouteEntry> ProcReader::readRoutes()
             re.domain = t[1];
             re.status = RouteEntry::parseStatus(t[2]);
             re.totalHops = t[3].toInt();
+            re.lastTraced = QDateTime::currentSecsSinceEpoch();
             r.insert(ip, re);
         }
         RouteHop hop;
@@ -246,7 +250,7 @@ QMap<QString, RouteEntry> ProcReader::readRoutes()
         hop.cc = t[10];
         hop.lat = t[11].toLongLong() / 1000000.0;
         hop.lon = t[12].toLongLong() / 1000000.0;
-        hop.asn = t[13].toInt();
+        hop.asn = t[13];
         hop.org = t[14];
         r[ip].hops.append(hop);
     }

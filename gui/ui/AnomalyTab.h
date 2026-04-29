@@ -1,8 +1,10 @@
 #pragma once
 #include <QWidget>
-#include <QTableWidget>
-#include <QLabel>
 #include "../core/AnomalyEntry.h"
+class AnomalyModel;
+class QLineEdit;
+class QSortFilterProxyModel;
+class QSystemTrayIcon;
 
 class AnomalyTab : public QWidget
 {
@@ -10,8 +12,10 @@ class AnomalyTab : public QWidget
 public:
     explicit AnomalyTab(QWidget *parent = nullptr);
     void updateData(const QVector<AnomalyEntry> &entries);
+    int count() const;
 private:
-    QTableWidget *m_table;
-    QLabel       *m_countLabel;
-    QLabel       *m_noDataLabel;
+    AnomalyModel *m_model = nullptr;
+    QSortFilterProxyModel *m_proxy = nullptr;
+    QSystemTrayIcon *m_tray = nullptr;
+    int m_lastCount = 0;
 };

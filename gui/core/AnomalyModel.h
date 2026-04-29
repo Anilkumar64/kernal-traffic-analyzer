@@ -1,20 +1,20 @@
 #pragma once
 #include <QAbstractTableModel>
 #include <QVector>
-#include "TrafficEntry.h"
+#include "AnomalyEntry.h"
 
-class TrafficModel : public QAbstractTableModel
+class AnomalyModel : public QAbstractTableModel
 {
     Q_OBJECT
 public:
-    enum Column { Pid, Process, Protocol, Local, Remote, Domain, State, InBytes, OutBytes, InRate, OutRate, Count };
-    explicit TrafficModel(QObject *parent = nullptr);
+    enum Column { Timestamp, Pid, Process, Type, Details, Count };
+    explicit AnomalyModel(QObject *parent = nullptr);
     int rowCount(const QModelIndex &parent = {}) const override;
     int columnCount(const QModelIndex &parent = {}) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
-    void updateData(const QVector<TrafficEntry> &entries);
-    [[nodiscard]] const TrafficEntry &entryAt(int row) const;
+    void updateData(const QVector<AnomalyEntry> &entries);
+    void clear();
 private:
-    QVector<TrafficEntry> m_data;
+    QVector<AnomalyEntry> m_data;
 };

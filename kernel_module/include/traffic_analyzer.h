@@ -159,11 +159,6 @@ struct traffic_entry
     enum conn_state state;
 
     bool route_requested;
-
-    /* PHASE 6: netlink update throttle */
-    u64 nl_last_update;   /* timestamp of last CONN_UPDATE sent  */
-    u32 nl_last_rate_out; /* rate at last update (for % change)  */
-    u32 nl_last_rate_in;
 };
 
 struct traffic_node

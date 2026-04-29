@@ -205,7 +205,7 @@ void parse_packet(struct sk_buff *skb, bool incoming)
         if (!ip6)
             return;
         /*
-         * Store last 32 bits of each IPv6 address.  For connections
+         * KNOWN LIMITATION: Store last 32 bits of each IPv6 address. For connections
          * to real IPv4 hosts via v4-mapped addresses this gives the
          * correct IPv4 address.  Full 128-bit support can be added
          * later when the flow_key and traffic_entry structs are

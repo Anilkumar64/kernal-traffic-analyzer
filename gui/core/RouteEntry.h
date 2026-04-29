@@ -14,7 +14,7 @@ struct RouteHop {
     QString cc;
     double  lat = 0.0;
     double  lon = 0.0;
-    int     asn = 0;
+    QString asn;
     QString org;
 
     bool hasGeo() const { return lat != 0.0 || lon != 0.0; }
@@ -32,6 +32,7 @@ struct RouteEntry {
     QString     domain;
     RouteStatus status = RouteStatus::Unknown;
     int         totalHops = 0;
+    qint64      lastTraced = 0;
     QVector<RouteHop> hops;
 
     bool isReady() const {

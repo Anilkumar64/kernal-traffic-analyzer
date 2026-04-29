@@ -1,27 +1,25 @@
 #pragma once
 #include <QWidget>
-#include <QTableView>
-#include <QLineEdit>
-#include <QLabel>
-#include <QSortFilterProxyModel>
-#include "../core/ProcModel.h"
 #include "../core/ProcEntry.h"
+#include "../core/TrafficEntry.h"
+class QLabel;
+class QLineEdit;
+class QSortFilterProxyModel;
+class QTableView;
+class ProcModel;
 
 class ProcessesTab : public QWidget
 {
     Q_OBJECT
 public:
     explicit ProcessesTab(QWidget *parent = nullptr);
-    void updateData(const QVector<ProcEntry> &entries);
-signals:
-    void processClicked(int pid, const QString &process, const QString &exe);
-private slots:
-    void onRowClicked(const QModelIndex &index);
-    void onFilterChanged(const QString &text);
+    void updateData(const QVector<ProcEntry> &processes, const QVector<TrafficEntry> &connections);
 private:
-    QTableView            *m_table;
-    ProcModel             *m_model;
-    QSortFilterProxyModel *m_proxy;
-    QLineEdit             *m_filterEdit;
-    QLabel                *m_countLabel;
+    void showDetails(const QModelIndex &index);
+    ProcModel *m_model = nullptr;
+    QSortFilterProxyModel *m_proxy = nullptr;
+    QLineEdit *m_filter = nullptr;
+    QTableView *m_table = nullptr;
+    QLabel *m_detail = nullptr;
+    QVector<TrafficEntry> m_connections;
 };

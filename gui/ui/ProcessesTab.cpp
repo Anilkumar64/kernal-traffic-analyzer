@@ -1,105 +1,58 @@
 #include "ProcessesTab.h"
-#include "Style.h"
-#include <QVBoxLayout>
-#include <QHBoxLayout>
+#include "../core/ProcModel.h"
 #include <QHeaderView>
-#include <QFrame>
+#include <QLabel>
+#include <QLineEdit>
+#include <QSortFilterProxyModel>
+#include <QTableView>
+#include <QVBoxLayout>
 
 ProcessesTab::ProcessesTab(QWidget *parent) : QWidget(parent)
 {
-    auto *outerLayout = new QVBoxLayout(this);
-    outerLayout->setContentsMargins(0, 0, 0, 0);
-    outerLayout->setSpacing(0);
-
-    // Top bar
-    auto *topBar = new QWidget(this);
-    topBar->setObjectName("TopBar");
-    topBar->setFixedHeight(60);
-    auto *tl = new QHBoxLayout(topBar);
-    tl->setContentsMargins(20, 0, 20, 0);
-    tl->setSpacing(12);
-
-    auto *titleLbl = new QLabel("Processes", topBar);
-    titleLbl->setStyleSheet(
-        "color:#ffffff;font-size:16px;font-weight:600;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
-    m_countLabel = new QLabel("", topBar);
-    m_countLabel->setStyleSheet("color:#8a8a8a;font-size:13px;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
-    tl->addWidget(titleLbl);
-    tl->addWidget(m_countLabel);
-    tl->addStretch();
-
-    m_filterEdit = new QLineEdit(topBar);
-    m_filterEdit->setPlaceholderText("Filter by process or path...");
-    m_filterEdit->setFixedWidth(240);
-    m_filterEdit->setClearButtonEnabled(true);
-    connect(m_filterEdit, &QLineEdit::textChanged,
-            this, &ProcessesTab::onFilterChanged);
-    tl->addWidget(m_filterEdit);
-
-    outerLayout->addWidget(topBar);
-
-    auto *div = new QFrame(this);
-    div->setFrameShape(QFrame::HLine);
-    div->setStyleSheet("background:#3e3e42;max-height:1px;");
-    outerLayout->addWidget(div);
-
-    // Model + proxy
+    auto *layout = new QVBoxLayout(this);
+    m_filter = new QLineEdit(this);
+    m_filter->setPlaceholderText("Filter processes");
+    layout->addWidget(m_filter);
     m_model = new ProcModel(this);
     m_proxy = new QSortFilterProxyModel(this);
     m_proxy->setSourceModel(m_model);
     m_proxy->setFilterCaseSensitivity(Qt::CaseInsensitive);
     m_proxy->setFilterKeyColumn(-1);
-
-    // Table
     m_table = new QTableView(this);
     m_table->setModel(m_proxy);
-    m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setAlternatingRowColors(true);
-    m_table->setSortingEnabled(true);
     m_table->setShowGrid(false);
-    m_table->setWordWrap(false);
-    m_table->verticalHeader()->setVisible(false);
-    m_table->verticalHeader()->setDefaultSectionSize(48);
+    m_table->verticalHeader()->setDefaultSectionSize(36);
+    m_table->verticalHeader()->hide();
+    m_table->setSortingEnabled(true);
+    m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-    m_table->horizontalHeader()->setStretchLastSection(false);
-
-    m_table->setColumnWidth(ProcModel::COL_PROCESS, 130);
-    m_table->setColumnWidth(ProcModel::COL_EXE, 210);
-    m_table->setColumnWidth(ProcModel::COL_CONNS, 140);
-    m_table->setColumnWidth(ProcModel::COL_RATE_OUT, 88);
-    m_table->setColumnWidth(ProcModel::COL_RATE_IN, 88);
-    m_table->setColumnWidth(ProcModel::COL_BYTES, 88);
-    m_table->setColumnWidth(ProcModel::COL_TCP_PCT, 58);
-    m_table->setColumnWidth(ProcModel::COL_ANOMALY, 110);
-    m_table->setColumnWidth(ProcModel::COL_TOP_DEST, 190);
-    m_table->setColumnWidth(ProcModel::COL_PID, 55);
-    m_table->sortByColumn(ProcModel::COL_RATE_IN, Qt::DescendingOrder);
-
-    connect(m_table, &QTableView::clicked,
-            this, &ProcessesTab::onRowClicked);
-
-    outerLayout->addWidget(m_table, 1);
+    layout->addWidget(m_table, 1);
+    m_detail = new QLabel(this);
+    m_detail->setFrameShape(QFrame::StyledPanel);
+    m_detail->setWordWrap(true);
+    m_detail->hide();
+    layout->addWidget(m_detail);
+    connect(m_filter, &QLineEdit::textChanged, m_proxy, &QSortFilterProxyModel::setFilterFixedString);
+    connect(m_table, &QTableView::clicked, this, &ProcessesTab::showDetails);
 }
 
-void ProcessesTab::updateData(const QVector<ProcEntry> &entries)
+void ProcessesTab::updateData(const QVector<ProcEntry> &processes, const QVector<TrafficEntry> &connections)
 {
-    m_model->updateData(entries);
-    m_countLabel->setText(QString("  %1 processes").arg(entries.size()));
+    m_connections = connections;
+    m_model->updateData(processes);
 }
 
-void ProcessesTab::onRowClicked(const QModelIndex &index)
+void ProcessesTab::showDetails(const QModelIndex &index)
 {
-    if (!index.isValid())
-        return;
-    QModelIndex src = m_proxy->mapToSource(index);
-    if (!src.isValid() || src.row() < 0 || src.row() >= m_model->rowCount())
-        return;
-    const ProcEntry &e = m_model->entryAt(src.row());
-    emit processClicked(e.pid, e.process, e.exe);
-}
-
-void ProcessesTab::onFilterChanged(const QString &text)
-{
-    m_proxy->setFilterFixedString(text);
+    const auto source = m_proxy->mapToSource(index);
+    if (!source.isValid()) return;
+    const auto &proc = m_model->entryAt(source.row());
+    QStringList rows;
+    for (const auto &conn : m_connections) {
+        if (conn.pid == proc.pid)
+            rows << QString("%1 %2:%3 -> %4:%5 %6").arg(conn.protocol, conn.srcIp).arg(conn.srcPort).arg(conn.destIp).arg(conn.destPort).arg(conn.stateString());
+    }
+    m_detail->setText(rows.isEmpty() ? "No current connections for this process." : rows.join("\n"));
+    m_detail->show();
 }

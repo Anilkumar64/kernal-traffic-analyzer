@@ -114,11 +114,9 @@ static unsigned int packet6_out_hook(void *priv,
 /* ================================================================
  * INCOMING HOOK
  *
- * PHASE 4: Before passing to parse_packet, check if this is a
- * DNS response.  If so, parse it and extract A records into
- * dns_map BEFORE updating traffic stats, so that when stats_update
- * runs dns_map_lookup() for this packet's src IP it already has
- * the domain name cached.
+ * Before passing to parse_packet, check if this is a DNS response.
+ * If so, parse it and extract A records into dns_map before updating
+ * traffic stats, so stats_update can use the cached domain name.
  * ================================================================ */
 static unsigned int packet_in_hook(void *priv,
                                    struct sk_buff *skb,
@@ -131,10 +129,9 @@ static unsigned int packet_in_hook(void *priv,
         return NF_ACCEPT;
 
     /*
-     * PHASE 4: Intercept DNS responses arriving from port 53.
-     *
-     * We parse the DNS payload first, populate dns_map with
-     * IP→domain mappings, then let parse_packet handle stats.
+     * Intercept DNS responses arriving from port 53. Parse the DNS
+     * payload first, populate dns_map with IP-to-domain mappings,
+     * then let parse_packet handle stats.
      *
      * The PID we pass to parse_dns_response is the process that
      * owns the destination socket (the one that sent the query).

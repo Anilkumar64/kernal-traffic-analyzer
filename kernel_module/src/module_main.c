@@ -9,30 +9,23 @@
 #include "../include/exe_resolver.h"
 #include "../include/dns_map.h"
 #include "../include/route_store.h"
-#include "../include/netlink_comm.h" /* PHASE 6 */
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Anil Reddy");
-MODULE_DESCRIPTION("Kernel Traffic Analyzer — Phase 6");
-MODULE_VERSION("7.0");
+MODULE_DESCRIPTION("Kernel Traffic Analyzer");
+MODULE_VERSION("1.0");
+
+/* KTA v1.0 */
 
 static int __init traffic_analyzer_init(void)
 {
     int ret;
 
-    printk(KERN_INFO "[traffic_analyzer] Initializing module v7.0\n");
-
-    /* Netlink FIRST — stats.c sends events during net_hook_init */
-    ret = ta_netlink_init();
-    if (ret)
-        return ret;
+    printk(KERN_INFO "[traffic_analyzer] Initializing module v1.0\n");
 
     ret = proc_fs_init();
     if (ret)
-    {
-        ta_netlink_cleanup();
         return ret;
-    }
 
     cache_init();
     inode_cache_init();
@@ -56,13 +49,10 @@ static int __init traffic_analyzer_init(void)
         inode_cache_cleanup();
         cache_cleanup();
         proc_fs_cleanup();
-        ta_netlink_cleanup();
         return ret;
     }
 
-    printk(KERN_INFO "[traffic_analyzer] Module loaded (Phase 6 — netlink ready)\n");
-    printk(KERN_INFO "[traffic_analyzer] Userspace: socket(AF_NETLINK, SOCK_RAW, %d)\n",
-           TA_NETLINK_PROTO);
+    printk(KERN_INFO "[traffic_analyzer] Module loaded\n");
     return 0;
 }
 
@@ -81,7 +71,6 @@ static void __exit traffic_analyzer_exit(void)
     inode_cache_cleanup();
     cache_cleanup();
     proc_fs_cleanup();
-    ta_netlink_cleanup(); /* netlink LAST */
 
     printk(KERN_INFO "[traffic_analyzer] Module unloaded\n");
 }

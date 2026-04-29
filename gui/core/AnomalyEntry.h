@@ -2,6 +2,7 @@
 #include <QString>
 
 struct AnomalyEntry {
+    qint64  timestamp = 0;
     int     pid = 0;
     int     uid = 0;
     QString process;
