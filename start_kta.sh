@@ -27,6 +27,7 @@ START_ROUTE_DAEMON=1
 START_BACKEND="${KTA_START_BACKEND:-0}"
 BACKEND_IFACE="${KTA_BACKEND_IFACE:-}"
 KEEP_MODULE=0
+RELOAD_MODULE=0
 VERBOSE="${KTA_VERBOSE:-0}"
 GUI_ARGS=()
 
@@ -46,6 +47,7 @@ Options:
   --iface IFACE       Interface for --with-backend. Defaults to default route.
   --backend-output P  JSON output path for backend. Default: /tmp/kta_flows.json.
   --keep-module       Leave traffic_analyzer loaded when the GUI exits.
+  --reload-module     Unload and reload an already healthy loaded module.
   --verbose           Print full build output instead of writing it to the log.
   -h, --help          Show this help.
 
@@ -93,6 +95,40 @@ check_qt_version() {
 
 module_loaded() {
     lsmod | awk '{print $1}' | grep -qx "$MODULE_NAME"
+}
+
+module_refcnt() {
+    cat "/sys/module/$MODULE_NAME/refcnt" 2>/dev/null || printf ''
+}
+
+module_initstate() {
+    cat "/sys/module/$MODULE_NAME/initstate" 2>/dev/null || printf ''
+}
+
+module_proc_ready() {
+    [[ -r /proc/traffic_analyzer && -r /proc/traffic_analyzer_stats ]]
+}
+
+module_proc_ready_text() {
+    if module_proc_ready; then
+        printf yes
+    else
+        printf no
+    fi
+}
+
+module_is_stuck() {
+    [[ "$(module_refcnt)" == "-1" || "$(module_initstate)" == "going" ]]
+}
+
+check_existing_module_before_build() {
+    if ! module_loaded; then
+        return
+    fi
+
+    if module_is_stuck || ! module_proc_ready; then
+        die "$MODULE_NAME is loaded but not usable (initstate=$(module_initstate), refcnt=$(module_refcnt), proc_ready=$(module_proc_ready_text)). Reboot to clear the stale kernel module, then run this launcher again."
+    fi
 }
 
 run_logged() {
@@ -173,6 +209,10 @@ parse_args() {
                 ;;
             --keep-module)
                 KEEP_MODULE=1
+                shift
+                ;;
+            --reload-module)
+                RELOAD_MODULE=1
                 shift
                 ;;
             --verbose)
@@ -274,8 +314,17 @@ load_module() {
     [[ -f "$MODULE_KO" ]] || die "kernel module not found: $MODULE_KO"
 
     if module_loaded; then
+        if module_is_stuck || ! module_proc_ready; then
+            die "$MODULE_NAME is loaded but not usable (initstate=$(module_initstate), refcnt=$(module_refcnt)). Reboot to clear the stale kernel module."
+        fi
+        if [[ "$RELOAD_MODULE" -eq 0 ]]; then
+            log "$MODULE_NAME is already loaded and healthy; reusing it"
+            return
+        fi
         log "$MODULE_NAME is already loaded; reloading it"
-        rmmod "$MODULE_NAME" || die "failed to unload existing $MODULE_NAME"
+        if ! rmmod "$MODULE_NAME"; then
+            die "failed to unload existing $MODULE_NAME. Close any running KTA windows and daemons, or reboot if /sys/module/$MODULE_NAME/initstate is 'going'."
+        fi
     fi
 
     log "Loading $MODULE_KO"
@@ -393,6 +442,7 @@ main() {
     parse_args "$@"
     require_root "$@"
     preflight
+    check_existing_module_before_build
 
     cd "$ROOT_DIR"
     build_project
