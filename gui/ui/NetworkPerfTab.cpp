@@ -70,7 +70,7 @@ void LatencyGraph::paintEvent(QPaintEvent *)
 
     if (m_samples.isEmpty())
     {
-        QFont f("Ubuntu Mono");
+        QFont f("Segoe UI");
         f.setPixelSize(13);
         p.setFont(f);
         p.setPen(QColor("#555555"));
@@ -93,7 +93,7 @@ void LatencyGraph::paintEvent(QPaintEvent *)
     {
         int y = gr.top() + gr.height() * i / 4;
         p.drawLine(gr.left(), y, gr.right(), y);
-        QFont af("Ubuntu Mono");
+        QFont af("Segoe UI");
         af.setPixelSize(9);
         p.setFont(af);
         p.setPen(QColor("#8a8a8a"));
@@ -155,7 +155,7 @@ void LatencyGraph::paintEvent(QPaintEvent *)
     }
 
     // Time labels
-    QFont lf("Ubuntu Mono");
+    QFont lf("Segoe UI");
     lf.setPixelSize(9);
     p.setFont(lf);
     p.setPen(QColor("#8a8a8a"));
@@ -182,10 +182,10 @@ NetworkPerfTab::NetworkPerfTab(QWidget *parent) : QWidget(parent)
     tl->setContentsMargins(24, 0, 24, 0);
     auto *ttl = new QLabel("Network Performance", topBar);
     ttl->setStyleSheet("color:#cccccc;font-size:22px;font-weight:600;"
-                       "font-family:'Ubuntu Mono';");
+                       "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_statusLabel = new QLabel("Pinging 8.8.8.8...", topBar);
     m_statusLabel->setStyleSheet("color:#8a8a8a;font-size:14px;"
-                                 "font-family:'Ubuntu Mono';");
+                                 "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     tl->addWidget(ttl);
     tl->addSpacing(16);
     tl->addWidget(m_statusLabel);
@@ -216,7 +216,7 @@ NetworkPerfTab::NetworkPerfTab(QWidget *parent) : QWidget(parent)
         cv->setContentsMargins(16, 12, 16, 12);
         cv->setSpacing(6);
         auto *ll = new QLabel(lbl, c);
-        ll->setStyleSheet("color:#8a8a8a;font-size:14px;font-weight:700;"
+        ll->setStyleSheet("color:#8a8a8a;font-size:11px;font-weight:700;"
                           "letter-spacing:1px;background:transparent;");
         val = new QLabel("-", c);
         val->setStyleSheet(
@@ -235,7 +235,7 @@ NetworkPerfTab::NetworkPerfTab(QWidget *parent) : QWidget(parent)
 
     // Label
     auto *glbl = new QLabel("LATENCY OVER TIME  (8.8.8.8)", content);
-    glbl->setStyleSheet("color:#8a8a8a;font-size:14px;font-weight:700;"
+    glbl->setStyleSheet("color:#8a8a8a;font-size:11px;font-weight:700;"
                         "letter-spacing:1.5px;background:transparent;");
     cl->addWidget(glbl);
 
