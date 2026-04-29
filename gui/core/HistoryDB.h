@@ -3,6 +3,7 @@
 #include <QVector>
 #include <QObject>
 #include <QMutex>
+#include <QHash>
 
 // ============================================================
 // Data structures
@@ -69,4 +70,11 @@ private:
     bool m_open = false;
     void *m_db = nullptr; // sqlite3 *
     QMutex m_mutex;
+
+    struct PreviousBytes {
+        quint64 outBytes = 0;
+        quint64 inBytes = 0;
+        bool valid = false;
+    };
+    QHash<QString, PreviousBytes> m_previousBytes;
 };
