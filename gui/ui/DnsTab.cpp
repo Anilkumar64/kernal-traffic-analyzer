@@ -1,7 +1,10 @@
 #include "DnsTab.h"
 #include "../core/DnsModel.h"
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QHeaderView>
 #include <QLineEdit>
+#include <QMenu>
 #include <QSortFilterProxyModel>
 #include <QTableView>
 #include <QVBoxLayout>
@@ -27,6 +30,24 @@ DnsTab::DnsTab(QWidget *parent) : QWidget(parent)
     table->setSortingEnabled(true);
     layout->addWidget(table, 1);
     connect(filter, &QLineEdit::textChanged, m_proxy, &QSortFilterProxyModel::setFilterFixedString);
+    table->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(table, &QTableView::customContextMenuRequested, this, [this, table](const QPoint &pos) {
+        const auto idx = table->indexAt(pos);
+        if (!idx.isValid()) return;
+        QMenu menu(this);
+        auto *copyRow = menu.addAction("Copy Row");
+        auto *copyIp = menu.addAction("Copy IP");
+        auto *copyProc = menu.addAction("Copy Process Name");
+        auto *chosen = menu.exec(table->viewport()->mapToGlobal(pos));
+        if (!chosen) return;
+        QString text;
+        if (chosen == copyRow) {
+            for (int c = 0; c < m_proxy->columnCount(); ++c) text += m_proxy->index(idx.row(), c).data().toString() + '\t';
+        } else if (chosen == copyIp) {
+            text = m_proxy->index(idx.row(), DnsModel::Ip).data().toString();
+        }
+        QGuiApplication::clipboard()->setText(text.trimmed());
+    });
 }
 
 void DnsTab::updateData(const QVector<DnsEntry> &entries) { m_model->updateData(entries); }

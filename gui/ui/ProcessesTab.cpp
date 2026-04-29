@@ -1,8 +1,11 @@
 #include "ProcessesTab.h"
 #include "../core/ProcModel.h"
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QSortFilterProxyModel>
 #include <QTableView>
 #include <QVBoxLayout>
@@ -35,6 +38,24 @@ ProcessesTab::ProcessesTab(QWidget *parent) : QWidget(parent)
     layout->addWidget(m_detail);
     connect(m_filter, &QLineEdit::textChanged, m_proxy, &QSortFilterProxyModel::setFilterFixedString);
     connect(m_table, &QTableView::clicked, this, &ProcessesTab::showDetails);
+    m_table->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_table, &QTableView::customContextMenuRequested, this, [this](const QPoint &pos) {
+        const auto idx = m_table->indexAt(pos);
+        if (!idx.isValid()) return;
+        QMenu menu(this);
+        auto *copyRow = menu.addAction("Copy Row");
+        auto *copyIp = menu.addAction("Copy IP");
+        auto *copyProc = menu.addAction("Copy Process Name");
+        auto *chosen = menu.exec(m_table->viewport()->mapToGlobal(pos));
+        if (!chosen) return;
+        QString text;
+        if (chosen == copyRow) {
+            for (int c = 0; c < m_proxy->columnCount(); ++c) text += m_proxy->index(idx.row(), c).data().toString() + '\t';
+        } else if (chosen == copyProc) {
+            text = m_proxy->index(idx.row(), ProcModel::Process).data().toString();
+        }
+        QGuiApplication::clipboard()->setText(text.trimmed());
+    });
 }
 
 void ProcessesTab::updateData(const QVector<ProcEntry> &processes, const QVector<TrafficEntry> &connections)

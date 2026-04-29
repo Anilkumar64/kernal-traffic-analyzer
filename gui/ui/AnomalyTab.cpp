@@ -1,8 +1,11 @@
 #include "AnomalyTab.h"
 #include "../core/AnomalyModel.h"
 #include <QApplication>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QHeaderView>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPushButton>
 #include <QSortFilterProxyModel>
 #include <QStyle>
@@ -41,6 +44,24 @@ AnomalyTab::AnomalyTab(QWidget *parent) : QWidget(parent)
     m_tray = new QSystemTrayIcon(QApplication::style()->standardIcon(QStyle::SP_MessageBoxWarning), this);
     m_tray->setToolTip("Kernel Traffic Analyzer");
     m_tray->show();
+    table->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(table, &QTableView::customContextMenuRequested, this, [this, table](const QPoint &pos) {
+        const auto idx = table->indexAt(pos);
+        if (!idx.isValid()) return;
+        QMenu menu(this);
+        auto *copyRow = menu.addAction("Copy Row");
+        auto *copyIp = menu.addAction("Copy IP");
+        auto *copyProc = menu.addAction("Copy Process Name");
+        auto *chosen = menu.exec(table->viewport()->mapToGlobal(pos));
+        if (!chosen) return;
+        QString text;
+        if (chosen == copyRow) {
+            for (int c = 0; c < m_proxy->columnCount(); ++c) text += m_proxy->index(idx.row(), c).data().toString() + '\t';
+        } else if (chosen == copyProc) {
+            text = m_proxy->index(idx.row(), AnomalyModel::Process).data().toString();
+        }
+        QGuiApplication::clipboard()->setText(text.trimmed());
+    });
 }
 
 void AnomalyTab::updateData(const QVector<AnomalyEntry> &entries)
