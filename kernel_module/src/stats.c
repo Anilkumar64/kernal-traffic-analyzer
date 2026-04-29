@@ -460,6 +460,7 @@ void stats_update(const struct flow_key *key, pid_t pid, uid_t uid,
 	struct traffic_entry *entry;
 	struct flow_key canonical;
 	ktime_t now;
+	bool request_route = false;
 
 	if (!key)
 		return;
@@ -494,6 +495,7 @@ void stats_update(const struct flow_key *key, pid_t pid, uid_t uid,
 		entry->pid_resolved = pid > 0;
 		list_add_tail(&entry->list, &traffic_list);
 		traffic_entries++;
+		request_route = true;
 	} else if (!entry->pid_resolved && pid > 0) {
 		entry->pid = pid;
 		entry->uid = uid;
@@ -522,6 +524,9 @@ void stats_update(const struct flow_key *key, pid_t pid, uid_t uid,
 	total_packets++;
 	total_bytes += pkt_len;
 	spin_unlock_bh(&stats_lock);
+
+	if (request_route)
+		route_store_request(canonical.dst_ip);
 }
 
 /**
