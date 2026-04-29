@@ -94,6 +94,7 @@ private:
     std::unique_ptr<HistoryDB> history_db_;
     ParsedData current_data_;
     QLabel* status_module_{nullptr};
+    QLabel* status_counts_{nullptr};
     QLabel* status_pkt_rate_{nullptr};
     QLabel* status_bytes_{nullptr};
     QLabel* status_uptime_{nullptr};

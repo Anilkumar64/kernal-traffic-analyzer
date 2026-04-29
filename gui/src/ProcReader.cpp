@@ -62,28 +62,18 @@ bool toBoolSafe(const QString& value)
 }
 
 ProcReader::ProcReader(QObject* parent)
-    : QObject(parent),
-      worker_thread_(new QThread())
+    : QObject(parent)
 {
     qRegisterMetaType<ParsedData>("ParsedData");
-    moveToThread(worker_thread_);
-    worker_thread_->setObjectName("KTA ProcReader");
-    worker_thread_->start();
 }
 
 ProcReader::~ProcReader()
 {
-    if (worker_thread_ != nullptr) {
-        worker_thread_->quit();
-        worker_thread_->wait();
-        delete worker_thread_;
-        worker_thread_ = nullptr;
-    }
 }
 
 void ProcReader::requestRefresh()
 {
-    QMetaObject::invokeMethod(this, &ProcReader::doRead, Qt::QueuedConnection);
+    doRead();
 }
 
 void ProcReader::doRead()

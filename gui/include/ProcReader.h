@@ -8,7 +8,6 @@
 #pragma once
 
 #include <QObject>
-#include <QThread>
 #include <QVector>
 #include <QString>
 #include <QStringList>
@@ -192,5 +191,4 @@ private:
      */
     QStringList readProcFile(const QString& path);
 
-    QThread* worker_thread_{nullptr};
 };

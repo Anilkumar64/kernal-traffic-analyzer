@@ -228,14 +228,17 @@ void MainWindow::setupStack()
 void MainWindow::setupStatusBar()
 {
     status_module_ = new QLabel(this);
+    status_counts_ = new QLabel(this);
     status_pkt_rate_ = new QLabel(this);
     status_bytes_ = new QLabel(this);
     status_uptime_ = new QLabel(this);
     statusBar()->addPermanentWidget(status_module_);
+    statusBar()->addPermanentWidget(status_counts_);
     statusBar()->addPermanentWidget(status_pkt_rate_);
     statusBar()->addPermanentWidget(status_bytes_);
     statusBar()->addPermanentWidget(status_uptime_);
     onModuleNotLoaded();
+    status_counts_->setText("Connections: 0 | DNS: 0 | Routes: 0");
     status_pkt_rate_->setText("Packets: 0/s");
     status_bytes_->setText("Total: 0 B");
     status_uptime_->setText("Uptime: 00:00:00");
@@ -270,7 +273,11 @@ void MainWindow::updateStatusBar(const ParsedData& data)
     } else {
         onModuleNotLoaded();
     }
-    status_pkt_rate_->setText(QString("Packets: %1/s").arg(data.stats.totalPackets));
+    status_counts_->setText(QString("Connections: %1 | DNS: %2 | Routes: %3")
+        .arg(data.connections.size())
+        .arg(data.dns.size())
+        .arg(data.routes.size()));
+    status_pkt_rate_->setText(QString("Packets: %1").arg(data.stats.totalPackets));
     status_bytes_->setText(QString("Total: %1").arg(formatBytes(data.stats.totalBytes)));
     const quint64 sec = data.stats.uptimeSec;
     status_uptime_->setText(QString("Uptime: %1:%2:%3")
