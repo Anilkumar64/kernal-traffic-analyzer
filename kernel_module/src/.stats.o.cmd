@@ -21,7 +21,7 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
     $(wildcard include/config/CC_HAS_ASM_INLINE) \
   include/linux/compiler_attributes.h \
   include/linux/compiler-gcc.h \
-    $(wildcard include/config/RETPOLINE) \
+    $(wildcard include/config/MITIGATION_RETPOLINE) \
     $(wildcard include/config/GCC_ASM_GOTO_OUTPUT_WORKAROUND) \
     $(wildcard include/config/ARCH_USE_BUILTIN_BSWAP) \
     $(wildcard include/config/SHADOW_CALL_STACK) \
@@ -89,7 +89,7 @@ deps_/home/anilreddy/Documents/Projects/kernel_traffic_analyzer/kernel_module/sr
     $(wildcard include/config/MODVERSIONS) \
   arch/x86/include/asm/linkage.h \
     $(wildcard include/config/CALL_PADDING) \
-    $(wildcard include/config/RETHUNK) \
+    $(wildcard include/config/MITIGATION_RETHUNK) \
     $(wildcard include/config/SLS) \
     $(wildcard include/config/FUNCTION_PADDING_BYTES) \
     $(wildcard include/config/UML) \
