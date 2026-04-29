@@ -27,11 +27,11 @@ ThreatMapTab::ThreatMapTab(QWidget *parent) : QWidget(parent)
     auto *tl = new QHBoxLayout(topBar);
     tl->setContentsMargins(24, 0, 24, 0);
     auto *ttl = new QLabel("Network Threat Map", topBar);
-    ttl->setStyleSheet("color:#cccccc;font-size:17px;font-weight:600;"
-                       "font-family:'Ubuntu Mono';");
+    ttl->setStyleSheet("color:#ffffff;font-size:17px;font-weight:600;"
+                       "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_statusLabel = new QLabel("Scanning connections...", topBar);
-    m_statusLabel->setStyleSheet("color:#8a8a8a;font-size:14px;"
-                                 "font-family:'Ubuntu Mono';");
+    m_statusLabel->setStyleSheet("color:#8a8a8a;font-size:13px;"
+                                 "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     tl->addWidget(ttl);
     tl->addSpacing(16);
     tl->addWidget(m_statusLabel);
