@@ -20,8 +20,8 @@ BgpTab::BgpTab(QWidget *parent) : QWidget(parent)
     auto *tl = new QHBoxLayout(topBar);
     tl->setContentsMargins(20,0,20,0);
     auto *ttl = new QLabel("BGP Route Monitor", topBar);
-    ttl->setStyleSheet("color:#cccccc;font-size:17px;font-weight:600;"
-                       "font-family:'Ubuntu Mono';");
+    ttl->setStyleSheet("color:#ffffff;font-size:17px;font-weight:600;"
+                       "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
 
     m_resetBtn = new QPushButton("Reset Learning", topBar);
     m_resetBtn->setFixedWidth(140);
@@ -40,7 +40,7 @@ BgpTab::BgpTab(QWidget *parent) : QWidget(parent)
     m_statusBanner->setAlignment(Qt::AlignCenter);
     m_statusBanner->setStyleSheet(
         "background:#252545;color:#c586c0;font-size:15px;font-weight:600;"
-        "font-family:'Ubuntu Mono';border-bottom:1px solid #555555;");
+        "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;border-bottom:1px solid #333333;");
     outer->addWidget(m_statusBanner);
 
     // Learned routes section
@@ -130,7 +130,7 @@ void BgpTab::rebuild()
                 .arg(days));
         m_statusBanner->setStyleSheet(
             "background:#252545;color:#c586c0;font-size:15px;font-weight:600;"
-            "font-family:'Ubuntu Mono';border-bottom:1px solid #555555;");
+            "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;border-bottom:1px solid #333333;");
     } else {
         auto alerts = m_monitor->alerts();
         if (!alerts.isEmpty()) {
@@ -140,12 +140,12 @@ void BgpTab::rebuild()
                     .arg(alerts.size()==1?"y":"ies"));
             m_statusBanner->setStyleSheet(
                 "background:#2e1515;color:#ef4444;font-size:15px;font-weight:600;"
-                "font-family:'Ubuntu Mono';border-bottom:1px solid #555555;");
+                "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;border-bottom:1px solid #333333;");
         } else {
             m_statusBanner->setText("✓  All routes normal — no BGP anomalies");
             m_statusBanner->setStyleSheet(
                 "background:#1a2e2b;color:#4ec9b0;font-size:15px;font-weight:600;"
-                "font-family:'Ubuntu Mono';border-bottom:1px solid #555555;");
+                "font-family:'Segoe UI','Ubuntu',Arial,sans-serif;border-bottom:1px solid #333333;");
         }
     }
 
