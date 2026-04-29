@@ -1,432 +1,307 @@
-#include <linux/kernel.h>
-#include <linux/ip.h>
+/**
+ * @file packet_parser.c
+ * @brief Netfilter packet dissector and PID attribution coordinator.
+ * @details Packets are parsed without sleeping, supporting IPv4, IPv6 extension
+ * header walking, TCP state derivation, UDP flow tracking, and four-tier PID
+ * attribution through socket, inode, flow, and asynchronous resolver caches.
+ * @author Kernel Traffic Analyzer Project
+ * @license GPL-2.0
+ */
+
+#include <linux/cred.h>
+#include <linux/if_ether.h>
 #include <linux/ipv6.h>
+#include <linux/pid.h>
+#include <linux/rcupdate.h>
+#include <linux/sched.h>
+#include <linux/skbuff.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
-#include <linux/skbuff.h>
-#include <linux/sched.h>
-#include <linux/string.h>
-#include <linux/types.h>
-#include <linux/pid.h>
-#include <net/ip.h>
 #include <net/ipv6.h>
 #include <net/sock.h>
-#include <linux/sched/signal.h>
-#include <linux/fdtable.h>
-#include <linux/rcupdate.h>
-#include "../include/traffic_analyzer.h"
-#include "../include/resolver.h"
-#include "../include/sock_cache.h"
-#include "../include/flow_cache.h"
-#include "../include/inode_cache.h"
-#include "../include/cache.h"
-#include "../include/exe_resolver.h"
+#include "../include/kta_api.h"
 
-/* ================================================================
- * HELPERS
- * ================================================================ */
-static inline bool is_kernel_thread(const char *comm)
+/**
+ * make_canonical() - Normalize a flow key for bidirectional matching.
+ * @key: Flow key to normalize in place.
+ * @return: None.
+ * @note: Lower IPv4 value is stored as src; ports are swapped with addresses.
+ */
+void make_canonical(struct flow_key *key)
 {
-    return (strncmp(comm, "ksoftirqd", 9) == 0 ||
-            strncmp(comm, "kworker", 7) == 0);
+	if (!key)
+		return;
+	if (ntohl(key->src_ip) > ntohl(key->dst_ip)) {
+		__be32 ip = key->src_ip;
+		__be16 port = key->src_port;
+
+		key->src_ip = key->dst_ip;
+		key->src_port = key->dst_port;
+		key->dst_ip = ip;
+		key->dst_port = port;
+	}
 }
 
-static bool pid_is_alive(pid_t pid)
+/**
+ * parser_task_name() - Resolve a task name for a PID without sleeping.
+ * @pid: PID to inspect.
+ * @out: Destination process-name buffer.
+ * @outlen: Destination buffer length.
+ * @return: None.
+ * @note: Falls back to current->comm or "unknown" when unresolved.
+ */
+static void parser_task_name(pid_t pid, char *out, size_t outlen)
 {
-    struct pid *p;
-    struct task_struct *t;
+	struct task_struct *task;
 
-    if (!pid)
-        return false;
+	if (!out || !outlen)
+		return;
+	strlcpy(out, "unknown", outlen);
+	if (pid <= 0) {
+		if (current)
+			strlcpy(out, current->comm, outlen);
+		return;
+	}
 
-    p = find_get_pid(pid);
-    if (!p)
-        return false;
-
-    t = pid_task(p, PIDTYPE_PID);
-    put_pid(p);
-    return t != NULL;
+	rcu_read_lock();
+	task = pid_task(find_vpid(pid), PIDTYPE_PID);
+	if (task)
+		strlcpy(out, task->comm, outlen);
+	rcu_read_unlock();
 }
 
-static enum conn_state tcp_derive_state(struct sk_buff *skb, bool incoming)
+/**
+ * parser_uid_from_sock() - Determine packet owner UID.
+ * @sk: Socket pointer from skb.
+ * @return: Numeric UID.
+ * @note: Falls back to current_uid() when no socket UID is available.
+ */
+static uid_t parser_uid_from_sock(const struct sock *sk)
 {
-    struct tcphdr *tcp;
-
-    if (!skb_transport_header_was_set(skb))
-        return CONN_STATE_ESTABLISHED;
-    if (!pskb_may_pull(skb, skb_transport_offset(skb) + sizeof(struct tcphdr)))
-        return CONN_STATE_ESTABLISHED;
-
-    tcp = (struct tcphdr *)skb_transport_header(skb);
-
-    if (tcp->rst)
-        return CONN_STATE_CLOSED;
-    if (tcp->fin)
-        return CONN_STATE_FIN_WAIT;
-    if (tcp->syn && tcp->ack)
-        return CONN_STATE_ESTABLISHED;
-    if (tcp->syn && !tcp->ack)
-        return incoming ? CONN_STATE_SYN_RECV : CONN_STATE_SYN_SENT;
-
-    return CONN_STATE_ESTABLISHED;
+	if (sk)
+		return from_kuid(&init_user_ns, sk->sk_uid);
+	return from_kuid(&init_user_ns, current_uid());
 }
 
-static bool ipv6_find_transport(struct sk_buff *skb,
-                                u8 *protocol,
-                                int *transport_off)
+/**
+ * resolve_pid_4tier() - Resolve a flow PID using socket, inode, flow, resolver.
+ * @key: Canonical flow key.
+ * @sk: Socket pointer from skb, possibly NULL.
+ * @return: PID on synchronous hit, otherwise zero.
+ * @note: Tier four schedules async work and returns unresolved for this packet.
+ */
+pid_t resolve_pid_4tier(const struct flow_key *key, const struct sock *sk)
 {
-    struct ipv6hdr *ip6;
-    u8 nexthdr;
-    int offset = sizeof(struct ipv6hdr);
+	pid_t pid;
+	unsigned long ino;
 
-    if (!pskb_may_pull(skb, sizeof(struct ipv6hdr)))
-        return false;
+	if (!key)
+		return 0;
 
-    ip6 = (struct ipv6hdr *)skb->data;
-    nexthdr = ip6->nexthdr;
+	pid = sock_cache_lookup(sk);
+	if (pid > 0)
+		return pid;
 
-    while (nexthdr == NEXTHDR_HOP ||
-           nexthdr == NEXTHDR_ROUTING ||
-           nexthdr == NEXTHDR_DEST ||
-           nexthdr == NEXTHDR_FRAGMENT ||
-           nexthdr == NEXTHDR_AUTH)
-    {
-        if (nexthdr == NEXTHDR_FRAGMENT)
-        {
-            struct frag_hdr *fh;
+	if (sk) {
+		ino = sock_i_ino(sk);
+		pid = inode_cache_lookup(ino);
+		if (pid > 0) {
+			sock_cache_store(sk, pid);
+			return pid;
+		}
+	}
 
-            if (!pskb_may_pull(skb, offset + sizeof(*fh)))
-                return false;
-            fh = (struct frag_hdr *)(skb->data + offset);
-            if (ntohs(fh->frag_off) & ~0x7)
-                return false;
-            nexthdr = fh->nexthdr;
-            offset += sizeof(*fh);
-            continue;
-        }
+	pid = flow_cache_lookup(key);
+	if (pid > 0) {
+		sock_cache_store(sk, pid);
+		return pid;
+	}
 
-        if (nexthdr == NEXTHDR_AUTH)
-        {
-            struct ipv6_opt_hdr *ah;
-
-            if (!pskb_may_pull(skb, offset + sizeof(*ah)))
-                return false;
-            ah = (struct ipv6_opt_hdr *)(skb->data + offset);
-            nexthdr = ah->nexthdr;
-            offset += (ah->hdrlen + 2) << 2;
-            continue;
-        }
-
-        {
-            struct ipv6_opt_hdr *opthdr;
-
-            if (!pskb_may_pull(skb, offset + sizeof(*opthdr)))
-                return false;
-            opthdr = (struct ipv6_opt_hdr *)(skb->data + offset);
-            nexthdr = opthdr->nexthdr;
-            offset += (opthdr->hdrlen + 1) << 3;
-        }
-    }
-
-    if (nexthdr != IPPROTO_TCP && nexthdr != IPPROTO_UDP)
-        return false;
-
-    *protocol = nexthdr;
-    *transport_off = offset;
-    return true;
+	resolver_schedule(key);
+	return 0;
 }
 
-/* ================================================================
- * parse_packet
- * ================================================================ */
-void parse_packet(struct sk_buff *skb, bool incoming)
+/**
+ * tcp_state_from_header() - Derive analyzer state from TCP flags.
+ * @tcp: TCP header.
+ * @is_inbound: True for inbound hook.
+ * @return: Connection state.
+ * @note: Direction disambiguates SYN and SYN/ACK observations.
+ */
+static enum kta_conn_state tcp_state_from_header(const struct tcphdr *tcp,
+						 bool is_inbound)
 {
-    struct iphdr *ip = NULL;
-    struct ipv6hdr *ip6 = NULL;
-    __be32 saddr = 0, daddr = 0;
-    __u16 src_port = 0, dest_port = 0;
-    __u8 protocol = 0;
-    bool is_ipv6 = false;
-
-    pid_t pid = 0;
-    uid_t uid = 0;
-    char comm[TASK_COMM_LEN] = {0};
-    char exe[EXE_PATH_MAX] = {0};
-
-    pid_t real_pid = 0;
-    bool is_resolved = false;
-    bool should_scan = false;
-    bool is_new_conn = false;
-    bool tcp_syn_only = false;
-
-    enum conn_state state = CONN_STATE_ESTABLISHED;
-
-    struct pid *pid_struct = NULL;
-    struct task_struct *task = NULL;
-    struct sock *sk = NULL;
-
-    /* ================================================================
-     * 1. IP VERSION DETECTION
-     *
-     * At NF_INET_LOCAL_OUT / NF_INET_LOCAL_IN hooks skb->protocol is
-     * unreliable (often 0 for locally generated packets).  Read the
-     * version nibble from skb->data directly — it is valid at both
-     * hook points and works for IPv4 and IPv6.
-     * ================================================================ */
-    if (!skb)
-        return;
-    if (!pskb_may_pull(skb, 1))
-        return;
-
-    switch (((struct iphdr *)skb->data)->version)
-    {
-
-    case 4:
-        if (!pskb_may_pull(skb, sizeof(struct iphdr)))
-            return;
-        ip = (struct iphdr *)skb->data;
-        if (!ip)
-            return;
-        protocol = ip->protocol;
-        if (protocol != IPPROTO_TCP && protocol != IPPROTO_UDP)
-            return;
-        saddr = ip->saddr;
-        daddr = ip->daddr;
-        skb_set_transport_header(skb, ip->ihl * 4);
-        break;
-
-    case 6:
-    {
-        int transport_off;
-
-        if (!ipv6_find_transport(skb, &protocol, &transport_off))
-            return;
-        ip6 = (struct ipv6hdr *)skb->data;
-        if (!ip6)
-            return;
-        /*
-         * KNOWN LIMITATION: Store last 32 bits of each IPv6 address. For connections
-         * to real IPv4 hosts via v4-mapped addresses this gives the
-         * correct IPv4 address.  Full 128-bit support can be added
-         * later when the flow_key and traffic_entry structs are
-         * extended.
-         */
-        saddr = ip6->saddr.s6_addr32[3];
-        daddr = ip6->daddr.s6_addr32[3];
-        is_ipv6 = true;
-        skb_set_transport_header(skb, transport_off);
-        break;
-    }
-
-    default:
-        return;
-    }
-
-    /* ================================================================
-     * 2. PORTS + STATE
-     *
-     * skb_transport_header() is valid for both IPv4 and IPv6 here
-     * because we called skb_set_transport_header() above.
-     * Do NOT use ip_hdrlen() in the IPv6 path — it reads the IPv4
-     * IHL field from garbage memory and gives a wrong offset.
-     * ================================================================ */
-    if (protocol == IPPROTO_TCP)
-    {
-        struct tcphdr *tcp;
-
-        if (!pskb_may_pull(skb,
-                           skb_transport_offset(skb) + sizeof(struct tcphdr)))
-            return;
-
-        tcp = (struct tcphdr *)skb_transport_header(skb);
-        src_port = ntohs(tcp->source);
-        dest_port = ntohs(tcp->dest);
-        state = tcp_derive_state(skb, incoming);
-
-        if (tcp->syn && !tcp->ack)
-            tcp_syn_only = true;
-    }
-    else
-    { /* IPPROTO_UDP */
-        struct udphdr *udp;
-
-        if (!pskb_may_pull(skb,
-                           skb_transport_offset(skb) + sizeof(struct udphdr)))
-            return;
-
-        udp = (struct udphdr *)skb_transport_header(skb);
-        src_port = ntohs(udp->source);
-        dest_port = ntohs(udp->dest);
-        state = CONN_STATE_UDP_ACTIVE;
-    }
-
-    if (src_port == 0 || dest_port == 0)
-        return;
-
-    /* ================================================================
-     * 3. FLOW KEY
-     * ================================================================ */
-    {
-        struct flow_key key;
-
-        memset(&key, 0, sizeof(key));
-        key.src_ip = saddr;
-        key.dest_ip = daddr;
-        key.src_port = htons(src_port);
-        key.dest_port = htons(dest_port);
-        key.protocol = protocol;
-
-        if (tcp_syn_only && !flow_cache_exists(&key))
-            is_new_conn = true;
-
-        /* ================================================================
-         * 4. SOCKET
-         * ================================================================ */
-        sk = skb_to_full_sk(skb);
-
-        /* ================================================================
-         * 5. NO SOCKET PATH
-         * ================================================================ */
-        if (!sk)
-        {
-            real_pid = flow_cache_lookup(&key, &should_scan);
-            if (real_pid > 0 && pid_is_alive(real_pid))
-            {
-                is_resolved = true;
-                pid = real_pid;
-                goto update_stats;
-            }
-            flow_cache_mark_negative(&key);
-            return;
-        }
-
-        /* ================================================================
-         * 6. UID
-         * ================================================================ */
-        uid = sock_i_uid(sk).val;
-
-        /* ================================================================
-         * 7. PID RESOLUTION
-         * ================================================================ */
-
-        /* 7a. Sock cache */
-        real_pid = sock_cache_lookup(sk);
-        if (real_pid)
-        {
-            if (pid_is_alive(real_pid))
-            {
-                is_resolved = true;
-                flow_cache_mark_resolved(&key, real_pid);
-                goto done;
-            }
-            exe_cache_invalidate(real_pid);
-            real_pid = 0;
-        }
-
-        /* 7b. Inode cache — use sock_i_ino() for safe atomic access
-         *     instead of chasing sk->sk_socket->file which can be
-         *     freed concurrently (use-after-free). */
-        {
-            unsigned long ino = sock_i_ino(sk);
-            if (ino)
-            {
-                real_pid = inode_cache_lookup(ino);
-                if (real_pid && pid_is_alive(real_pid))
-                {
-                    is_resolved = true;
-                    sock_cache_insert(sk, real_pid);
-                    flow_cache_mark_resolved(&key, real_pid);
-                    goto done;
-                }
-                else if (real_pid)
-                {
-                    inode_cache_invalidate(ino);
-                    exe_cache_invalidate(real_pid);
-                    real_pid = 0;
-                }
-            }
-        }
-
-        /* 7c. Flow cache */
-        real_pid = flow_cache_lookup(&key, &should_scan);
-        if (real_pid > 0 && pid_is_alive(real_pid))
-        {
-            is_resolved = true;
-            goto done;
-        }
-
-        /* 7d. Full resolver — use sock_i_ino() to avoid UAF on sk_socket */
-        if (should_scan)
-        {
-            unsigned long ino = sock_i_ino(sk);
-
-            real_pid = resolve_pid_from_inode(ino);
-            if (!real_pid && sk->sk_socket && sk->sk_socket->file)
-                real_pid = resolve_pid_from_file(sk->sk_socket->file);
-
-            if (real_pid > 0 && pid_is_alive(real_pid))
-            {
-                is_resolved = true;
-                sock_cache_insert(sk, real_pid);
-                flow_cache_mark_resolved(&key, real_pid);
-            }
-            else
-            {
-                resolver_schedule(ino, sk,
-                                  (sk->sk_socket ? sk->sk_socket->file : NULL));
-                flow_cache_mark_negative(&key);
-                return;
-            }
-            goto done;
-        }
-
-        return;
-
-    done:
-        pid = real_pid;
-    } /* end flow_key scope */
-
-    /* ================================================================
-     * 8. TASK LOOKUP
-     * ================================================================ */
-update_stats:
-    rcu_read_lock();
-    pid_struct = find_get_pid(pid);
-    if (pid_struct)
-        task = pid_task(pid_struct, PIDTYPE_PID);
-
-    if (task)
-        get_task_comm(comm, task);
-    else
-        strncpy(comm, "unknown", TASK_COMM_LEN);
-
-    rcu_read_unlock();
-    put_pid(pid_struct);
-    pid_struct = NULL;
-
-    if (pid == 0 || is_kernel_thread(comm))
-        return;
-
-    /* ================================================================
-     * 9. EXE PATH LOOKUP (async — softirq safe)
-     * ================================================================ */
-    if (!exe_cache_lookup(pid, exe, sizeof(exe)))
-    {
-        resolver_schedule_exe(pid);
-        exe[0] = '\0';
-    }
-
-    /* ================================================================
-     * 10. RECORD
-     * ================================================================ */
-    stats_update(
-        pid, uid, comm, exe,
-        protocol,
-        saddr, daddr,
-        src_port, dest_port,
-        skb->len,
-        incoming,
-        is_resolved,
-        state,
-        is_new_conn);
+	if (tcp->rst)
+		return KTA_STATE_CLOSED;
+	if (tcp->fin)
+		return KTA_STATE_FIN_WAIT;
+	if (tcp->syn && tcp->ack)
+		return KTA_STATE_SYN_RECEIVED;
+	if (tcp->syn)
+		return is_inbound ? KTA_STATE_SYN_RECEIVED : KTA_STATE_SYN_SENT;
+	if (tcp->ack)
+		return KTA_STATE_ESTABLISHED;
+	return KTA_STATE_UNKNOWN;
 }
+
+/**
+ * parse_transport() - Parse TCP/UDP headers and update statistics.
+ * @skb: Packet buffer.
+ * @offset: Transport header offset.
+ * @key: Flow key with IP fields already populated.
+ * @is_inbound: True for inbound hook.
+ * @sk: Socket pointer from skb.
+ * @pkt_len: Packet length to account.
+ * @return: None.
+ * @note: Malformed or unsupported transport packets are ignored.
+ */
+static void parse_transport(struct sk_buff *skb, unsigned int offset,
+			    struct flow_key *key, bool is_inbound,
+			    const struct sock *sk, u32 pkt_len)
+{
+	struct tcphdr tcp;
+	struct udphdr udp;
+	enum kta_conn_state state;
+	pid_t pid;
+	uid_t uid;
+	char proc_name[MAX_PROC_NAME_LEN];
+
+	if (key->protocol == IPPROTO_TCP) {
+		if (skb_copy_bits(skb, offset, &tcp, sizeof(tcp)) != 0)
+			return;
+		key->src_port = tcp.source;
+		key->dst_port = tcp.dest;
+		state = tcp_state_from_header(&tcp, is_inbound);
+	} else if (key->protocol == IPPROTO_UDP) {
+		if (skb_copy_bits(skb, offset, &udp, sizeof(udp)) != 0)
+			return;
+		key->src_port = udp.source;
+		key->dst_port = udp.dest;
+		state = KTA_STATE_UDP;
+	} else {
+		return;
+	}
+
+	make_canonical(key);
+	pid = resolve_pid_4tier(key, sk);
+	parser_task_name(pid, proc_name, sizeof(proc_name));
+	uid = parser_uid_from_sock(sk);
+	stats_update(key, pid, uid, proc_name, pkt_len, is_inbound, state);
+}
+
+/**
+ * parse_ipv4_packet() - Parse an IPv4 packet.
+ * @skb: Packet buffer.
+ * @is_inbound: True for inbound hook.
+ * @return: None.
+ * @note: Uses ip_hdr() after validating the version nibble.
+ */
+static void parse_ipv4_packet(struct sk_buff *skb, bool is_inbound)
+{
+	struct iphdr iph;
+	struct flow_key key = { };
+	unsigned int ihl;
+
+	if (skb_copy_bits(skb, 0, &iph, sizeof(iph)) != 0)
+		return;
+	ihl = iph.ihl * 4U;
+	if (ihl < sizeof(iph) || ihl > skb->len)
+		return;
+	key.src_ip = iph.saddr;
+	key.dst_ip = iph.daddr;
+	key.protocol = iph.protocol;
+	parse_transport(skb, ihl, &key, is_inbound, skb->sk, skb->len);
+}
+
+/**
+ * ipv6_ext_len() - Calculate the byte length of an IPv6 extension header.
+ * @skb: Packet buffer.
+ * @offset: Extension header offset.
+ * @nexthdr: Extension header type.
+ * @next: Destination for the following next-header value.
+ * @return: Header length in bytes, or zero on malformed input.
+ * @note: Fragment headers are fixed length; AUTH uses its own length formula.
+ */
+static unsigned int ipv6_ext_len(struct sk_buff *skb, unsigned int offset,
+				 u8 nexthdr, u8 *next)
+{
+	struct ipv6_opt_hdr opt;
+
+	if (skb_copy_bits(skb, offset, &opt, sizeof(opt)) != 0)
+		return 0;
+	*next = opt.nexthdr;
+	if (nexthdr == NEXTHDR_FRAGMENT)
+		return IPV6_EXT_MIN_LEN;
+	if (nexthdr == NEXTHDR_AUTH)
+		return (opt.hdrlen + IPV6_AUTH_HDR_BIAS) * IPV6_AUTH_HDR_UNIT;
+	return (opt.hdrlen + 1U) * IPV6_EXT_MIN_LEN;
+}
+
+/**
+ * parse_ipv6_packet() - Parse an IPv6 packet and extension headers.
+ * @skb: Packet buffer.
+ * @is_inbound: True for inbound hook.
+ * @return: None.
+ * @note: IPv6 addresses are represented by their last 32 bits in flow keys.
+ */
+static void parse_ipv6_packet(struct sk_buff *skb, bool is_inbound)
+{
+	struct ipv6hdr ip6h;
+	struct flow_key key = { };
+	unsigned int offset = IPV6_BASE_HDR_LEN;
+	u8 nexthdr;
+
+	if (skb_copy_bits(skb, 0, &ip6h, sizeof(ip6h)) != 0)
+		return;
+
+	key.src_ip = ip6h.saddr.s6_addr32[IPV6_ADDR_LAST_WORD];
+	key.dst_ip = ip6h.daddr.s6_addr32[IPV6_ADDR_LAST_WORD];
+	nexthdr = ip6h.nexthdr;
+
+	while (nexthdr == NEXTHDR_HOP || nexthdr == NEXTHDR_ROUTING ||
+	       nexthdr == NEXTHDR_DEST || nexthdr == NEXTHDR_FRAGMENT ||
+	       nexthdr == NEXTHDR_AUTH) {
+		unsigned int len;
+		u8 next = NEXTHDR_NONE;
+
+		if (offset + IPV6_EXT_MIN_LEN > skb->len)
+			return;
+		len = ipv6_ext_len(skb, offset, nexthdr, &next);
+		if (!len || offset + len > skb->len)
+			return;
+		offset += len;
+		nexthdr = next;
+	}
+
+	key.protocol = nexthdr;
+	parse_transport(skb, offset, &key, is_inbound, skb->sk, skb->len);
+}
+
+/**
+ * parse_packet() - Parse one packet observed by a Netfilter hook.
+ * @skb: Packet buffer.
+ * @is_inbound: True for LOCAL_IN hooks, false for LOCAL_OUT hooks.
+ * @return: None.
+ * @note: The version nibble is read from skb data rather than skb->protocol.
+ */
+void parse_packet(struct sk_buff *skb, bool is_inbound)
+{
+	u8 version_byte;
+
+	if (!skb || skb->len < sizeof(version_byte))
+		return;
+	if (skb_copy_bits(skb, 0, &version_byte, sizeof(version_byte)) != 0)
+		return;
+
+	switch (version_byte >> 4) {
+	case 4:
+		parse_ipv4_packet(skb, is_inbound);
+		break;
+	case 6:
+		parse_ipv6_packet(skb, is_inbound);
+		break;
+	default:
+		break;
+	}
+}
+

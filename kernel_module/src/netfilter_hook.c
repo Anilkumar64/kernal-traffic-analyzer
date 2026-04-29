@@ -1,252 +1,186 @@
-#include <linux/kernel.h>
-#include <linux/module.h>
+/**
+ * @file netfilter_hook.c
+ * @brief Netfilter hook registration and packet dispatch.
+ * @details Four LOCAL_IN/LOCAL_OUT hooks cover IPv4 and IPv6 traffic. Inbound
+ * UDP DNS responses are parsed before general packet accounting so DNS answers
+ * can be associated with the same packet's traffic update.
+ * @author Kernel Traffic Analyzer Project
+ * @license GPL-2.0
+ */
+
+#include <linux/ip.h>
+#include <linux/ipv6.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_ipv6.h>
 #include <linux/skbuff.h>
-#include <linux/ip.h>
-#include <linux/ipv6.h>
 #include <linux/udp.h>
-#include <net/ip.h>
-#include "../include/traffic_analyzer.h"
-#include "../include/dns_parser.h"
-#include "../include/flow_cache.h"
-#include "../include/sock_cache.h"
+#include <net/net_namespace.h>
+#include "../include/kta_api.h"
 
-static struct nf_hook_ops nfho_out;
-static struct nf_hook_ops nfho_in;
-static struct nf_hook_ops nfho6_out;
-static struct nf_hook_ops nfho6_in;
+static struct nf_hook_ops kta_nf_ops[4];
+static unsigned int registered_hooks;
 
-static inline bool is_valid_ipv4(struct sk_buff *skb)
-{
-    return skb &&
-           pskb_may_pull(skb, sizeof(struct iphdr)) &&
-           ip_hdr(skb) != NULL;
-}
-
-static inline bool is_supported_proto(__u8 proto)
-{
-    return proto == IPPROTO_TCP || proto == IPPROTO_UDP;
-}
-
-/*
- * is_dns_response — true if this is a UDP packet from port 53.
- *
- * We intercept DNS RESPONSES (src_port == 53) not queries,
- * because responses contain the A records we need.
+/**
+ * maybe_parse_dns_v4() - Parse inbound IPv4 DNS responses before stats.
+ * @skb: Packet buffer.
+ * @return: None.
+ * @note: Only UDP packets with source port DNS_PORT are parsed.
  */
-static inline bool is_dns_response(struct sk_buff *skb)
+static void maybe_parse_dns_v4(struct sk_buff *skb)
 {
-    struct iphdr *ip;
-    struct udphdr *udp;
-    u8 dns_buf[12];
-    u8 *dns_hdr;
-    int udp_off;
-    int udp_payload_off;
+	struct iphdr iph;
+	struct udphdr udp;
+	unsigned int ihl;
 
-    if (!pskb_may_pull(skb, sizeof(struct iphdr) + sizeof(struct udphdr)))
-        return false;
-
-    ip = ip_hdr(skb);
-    if (ip->protocol != IPPROTO_UDP)
-        return false;
-
-    udp_off = ip_hdrlen(skb);
-    if (!pskb_may_pull(skb, udp_off + sizeof(struct udphdr)))
-        return false;
-
-    ip = ip_hdr(skb);
-    udp = (struct udphdr *)((__u8 *)ip + udp_off);
-    if (ntohs(udp->source) != 53)
-        return false;
-
-    udp_payload_off = udp_off + sizeof(struct udphdr);
-    if (!pskb_may_pull(skb, udp_payload_off + 12))
-        return false;
-
-    dns_hdr = skb_header_pointer(skb, udp_payload_off, 12, dns_buf);
-    if (!dns_hdr)
-        return false;
-
-    return (dns_hdr[2] & 0x80) != 0;
+	if (!skb || skb_copy_bits(skb, 0, &iph, sizeof(iph)) != 0)
+		return;
+	ihl = iph.ihl * 4U;
+	if (iph.protocol != IPPROTO_UDP || ihl + sizeof(udp) > skb->len)
+		return;
+	if (skb_copy_bits(skb, ihl, &udp, sizeof(udp)) != 0)
+		return;
+	if (ntohs(udp.source) == DNS_PORT)
+		dns_parse_response(skb, ihl + sizeof(udp));
 }
 
-/*
- * resolve_pid_for_hook — lightweight PID lookup from sock cache only.
- * Used to attribute DNS queries to the right process without doing
- * a full scan (too expensive in hook context).
+/**
+ * maybe_parse_dns_v6() - Parse inbound IPv6 DNS responses before stats.
+ * @skb: Packet buffer.
+ * @return: None.
+ * @note: This handles non-extension-header UDP DNS responses.
  */
-static pid_t resolve_pid_for_hook(struct sk_buff *skb)
+static void maybe_parse_dns_v6(struct sk_buff *skb)
 {
-    struct sock *sk = skb_to_full_sk(skb);
-    if (!sk)
-        return 0;
-    return sock_cache_lookup(sk);
+	struct ipv6hdr ip6h;
+	struct udphdr udp;
+
+	if (!skb || skb_copy_bits(skb, 0, &ip6h, sizeof(ip6h)) != 0)
+		return;
+	if (ip6h.nexthdr != IPPROTO_UDP ||
+	    IPV6_BASE_HDR_LEN + sizeof(udp) > skb->len)
+		return;
+	if (skb_copy_bits(skb, IPV6_BASE_HDR_LEN, &udp, sizeof(udp)) != 0)
+		return;
+	if (ntohs(udp.source) == DNS_PORT)
+		dns_parse_response(skb, IPV6_BASE_HDR_LEN + sizeof(udp));
 }
 
-/* ================================================================
- * OUTGOING HOOK
- * ================================================================ */
-static unsigned int packet_out_hook(void *priv,
-                                    struct sk_buff *skb,
-                                    const struct nf_hook_state *state)
+/**
+ * hook_ipv4_in() - IPv4 inbound Netfilter callback.
+ * @priv: Hook private data.
+ * @skb: Packet buffer.
+ * @state: Netfilter hook state.
+ * @return: NF_ACCEPT always.
+ * @note: DNS parsing runs before generic packet parsing.
+ */
+static unsigned int hook_ipv4_in(void *priv, struct sk_buff *skb,
+				 const struct nf_hook_state *state)
 {
-    if (!is_valid_ipv4(skb))
-        return NF_ACCEPT;
-
-    if (!is_supported_proto(ip_hdr(skb)->protocol))
-        return NF_ACCEPT;
-
-    parse_packet(skb, false);
-    return NF_ACCEPT;
+	maybe_parse_dns_v4(skb);
+	parse_packet(skb, true);
+	return NF_ACCEPT;
 }
 
-static unsigned int packet6_out_hook(void *priv,
-                                     struct sk_buff *skb,
-                                     const struct nf_hook_state *state)
+/**
+ * hook_ipv4_out() - IPv4 outbound Netfilter callback.
+ * @priv: Hook private data.
+ * @skb: Packet buffer.
+ * @state: Netfilter hook state.
+ * @return: NF_ACCEPT always.
+ * @note: Outbound DNS requests are accounted but not parsed into the DNS map.
+ */
+static unsigned int hook_ipv4_out(void *priv, struct sk_buff *skb,
+				  const struct nf_hook_state *state)
 {
-    if (skb)
-        parse_packet(skb, false);
-    return NF_ACCEPT;
+	parse_packet(skb, false);
+	return NF_ACCEPT;
 }
 
-/* ================================================================
- * INCOMING HOOK
- *
- * Before passing to parse_packet, check if this is a DNS response.
- * If so, parse it and extract A records into dns_map before updating
- * traffic stats, so stats_update can use the cached domain name.
- * ================================================================ */
-static unsigned int packet_in_hook(void *priv,
-                                   struct sk_buff *skb,
-                                   const struct nf_hook_state *state)
+/**
+ * hook_ipv6_in() - IPv6 inbound Netfilter callback.
+ * @priv: Hook private data.
+ * @skb: Packet buffer.
+ * @state: Netfilter hook state.
+ * @return: NF_ACCEPT always.
+ * @note: DNS response parsing is attempted before traffic accounting.
+ */
+static unsigned int hook_ipv6_in(void *priv, struct sk_buff *skb,
+				 const struct nf_hook_state *state)
 {
-    if (!is_valid_ipv4(skb))
-        return NF_ACCEPT;
-
-    if (!is_supported_proto(ip_hdr(skb)->protocol))
-        return NF_ACCEPT;
-
-    /*
-     * Intercept DNS responses arriving from port 53. Parse the DNS
-     * payload first, populate dns_map with IP-to-domain mappings,
-     * then let parse_packet handle stats.
-     *
-     * The PID we pass to parse_dns_response is the process that
-     * owns the destination socket (the one that sent the query).
-     * For systemd-resolved proxying, pid will be the resolver —
-     * that's acceptable and still useful.
-     */
-    if (is_dns_response(skb))
-    {
-        pid_t pid = resolve_pid_for_hook(skb);
-        char comm[TASK_COMM_LEN] = {0};
-
-        if (pid > 0)
-        {
-            struct pid *p;
-            struct task_struct *t;
-
-            rcu_read_lock();
-            p = find_get_pid(pid);
-            if (p)
-            {
-                t = pid_task(p, PIDTYPE_PID);
-                if (t)
-                    get_task_comm(comm, t);
-                put_pid(p);
-            }
-            rcu_read_unlock();
-        }
-
-        parse_dns_response(skb, pid, comm);
-        /* Fall through — also record as a normal UDP packet */
-    }
-
-    parse_packet(skb, true);
-    return NF_ACCEPT;
+	maybe_parse_dns_v6(skb);
+	parse_packet(skb, true);
+	return NF_ACCEPT;
 }
 
-static unsigned int packet6_in_hook(void *priv,
-                                    struct sk_buff *skb,
-                                    const struct nf_hook_state *state)
+/**
+ * hook_ipv6_out() - IPv6 outbound Netfilter callback.
+ * @priv: Hook private data.
+ * @skb: Packet buffer.
+ * @state: Netfilter hook state.
+ * @return: NF_ACCEPT always.
+ * @note: All outbound IPv6 packets are accepted after accounting.
+ */
+static unsigned int hook_ipv6_out(void *priv, struct sk_buff *skb,
+				  const struct nf_hook_state *state)
 {
-    if (skb)
-        parse_packet(skb, true);
-    return NF_ACCEPT;
+	parse_packet(skb, false);
+	return NF_ACCEPT;
 }
 
-/* ================================================================
- * INIT / CLEANUP
- * ================================================================ */
-int net_hook_init(void)
+/**
+ * nf_hook_init() - Register all Kernel Traffic Analyzer Netfilter hooks.
+ * @return: Zero on success or a negative errno from Netfilter registration.
+ * @note: Any partial registration is unwound before returning an error.
+ */
+int nf_hook_init(void)
 {
-    int ret;
+	int ret;
+	unsigned int idx;
 
-    nfho_out.hook = packet_out_hook;
-    nfho_out.pf = PF_INET;
-    nfho_out.hooknum = NF_INET_LOCAL_OUT;
-    nfho_out.priority = NF_IP_PRI_FIRST;
+	kta_nf_ops[0].hook = hook_ipv4_in;
+	kta_nf_ops[0].pf = PF_INET;
+	kta_nf_ops[0].hooknum = NF_INET_LOCAL_IN;
+	kta_nf_ops[0].priority = NF_IP_PRI_FIRST;
+	kta_nf_ops[1].hook = hook_ipv4_out;
+	kta_nf_ops[1].pf = PF_INET;
+	kta_nf_ops[1].hooknum = NF_INET_LOCAL_OUT;
+	kta_nf_ops[1].priority = NF_IP_PRI_FIRST;
+	kta_nf_ops[2].hook = hook_ipv6_in;
+	kta_nf_ops[2].pf = PF_INET6;
+	kta_nf_ops[2].hooknum = NF_INET_LOCAL_IN;
+	kta_nf_ops[2].priority = NF_IP_PRI_FIRST;
+	kta_nf_ops[3].hook = hook_ipv6_out;
+	kta_nf_ops[3].pf = PF_INET6;
+	kta_nf_ops[3].hooknum = NF_INET_LOCAL_OUT;
+	kta_nf_ops[3].priority = NF_IP_PRI_FIRST;
 
-    ret = nf_register_net_hook(&init_net, &nfho_out);
-    if (ret)
-    {
-        printk(KERN_ERR "[TA] Failed to register LOCAL_OUT hook\n");
-        return ret;
-    }
+	registered_hooks = 0;
+	for (idx = 0; idx < ARRAY_SIZE(kta_nf_ops); idx++) {
+		ret = nf_register_net_hook(&init_net, &kta_nf_ops[idx]);
+		if (ret) {
+			pr_err("kta: netfilter_hook: hook registration failed: %d\n",
+			       ret);
+			while (registered_hooks)
+				nf_unregister_net_hook(&init_net,
+						       &kta_nf_ops[--registered_hooks]);
+			return ret;
+		}
+		registered_hooks++;
+	}
 
-    nfho_in.hook = packet_in_hook;
-    nfho_in.pf = PF_INET;
-    nfho_in.hooknum = NF_INET_LOCAL_IN;
-    nfho_in.priority = NF_IP_PRI_FIRST;
-
-    ret = nf_register_net_hook(&init_net, &nfho_in);
-    if (ret)
-    {
-        printk(KERN_ERR "[TA] Failed to register LOCAL_IN hook\n");
-        nf_unregister_net_hook(&init_net, &nfho_out);
-        return ret;
-    }
-
-    nfho6_out.hook = packet6_out_hook;
-    nfho6_out.pf = NFPROTO_IPV6;
-    nfho6_out.hooknum = NF_INET_LOCAL_OUT;
-    nfho6_out.priority = NF_IP6_PRI_FIRST;
-
-    ret = nf_register_net_hook(&init_net, &nfho6_out);
-    if (ret)
-    {
-        printk(KERN_ERR "[TA] Failed to register IPv6 LOCAL_OUT hook\n");
-        nf_unregister_net_hook(&init_net, &nfho_in);
-        nf_unregister_net_hook(&init_net, &nfho_out);
-        return ret;
-    }
-
-    nfho6_in.hook = packet6_in_hook;
-    nfho6_in.pf = NFPROTO_IPV6;
-    nfho6_in.hooknum = NF_INET_LOCAL_IN;
-    nfho6_in.priority = NF_IP6_PRI_FIRST;
-
-    ret = nf_register_net_hook(&init_net, &nfho6_in);
-    if (ret)
-    {
-        printk(KERN_ERR "[TA] Failed to register IPv6 LOCAL_IN hook\n");
-        nf_unregister_net_hook(&init_net, &nfho6_out);
-        nf_unregister_net_hook(&init_net, &nfho_in);
-        nf_unregister_net_hook(&init_net, &nfho_out);
-        return ret;
-    }
-
-    printk(KERN_INFO "[traffic_analyzer] Netfilter hooks registered (IPv4/IPv6 LOCAL_IN/OUT)\n");
-    return 0;
+	return 0;
 }
 
-void net_hook_cleanup(void)
+/**
+ * nf_hook_exit() - Unregister all registered Netfilter hooks.
+ * @return: None.
+ * @note: Safe when initialization partially failed.
+ */
+void nf_hook_exit(void)
 {
-    nf_unregister_net_hook(&init_net, &nfho6_in);
-    nf_unregister_net_hook(&init_net, &nfho6_out);
-    nf_unregister_net_hook(&init_net, &nfho_out);
-    nf_unregister_net_hook(&init_net, &nfho_in);
-    printk(KERN_INFO "[traffic_analyzer] Netfilter hooks removed\n");
+	while (registered_hooks)
+		nf_unregister_net_hook(&init_net,
+				       &kta_nf_ops[--registered_hooks]);
 }
+
