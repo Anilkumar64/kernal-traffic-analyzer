@@ -25,9 +25,10 @@ public:
     QVector<FirewallRule> rules() const { return m_rules; }
 signals:
     void rulesChanged();
+    void unblockFailed(const QString &ip, const QString &error);
 private:
     FirewallManager() = default;
-    bool runIptables(const QStringList &args);
+    bool runIptables(const QStringList &args, QString *error = nullptr);
     QVector<FirewallRule> m_rules;
     QSet<QString>         m_blockedIps;
 };
