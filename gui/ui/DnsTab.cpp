@@ -20,7 +20,7 @@ DnsTab::DnsTab(QWidget *parent) : QWidget(parent)
     tl->setContentsMargins(20, 0, 20, 0);
     auto *title = new QLabel("DNS Map", topBar);
     title->setStyleSheet(
-        "color:#cccccc;font-size:16px;font-weight:600;font-family:'Ubuntu Mono';");
+        "color:#ffffff;font-size:16px;font-weight:600;font-family:'Segoe UI','Ubuntu',Arial,sans-serif;");
     m_countLabel = new QLabel("", topBar);
     m_countLabel->setStyleSheet("color:#8a8a8a;font-size:11px;");
     tl->addWidget(title);
